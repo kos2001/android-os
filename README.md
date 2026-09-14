@@ -37,6 +37,20 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-server.txt
 ANDROID_OS_NETWORK_TESTS=1 .venv/bin/python -m unittest tests.test_remote        # 공개 Pixel OTA 실검증
 ```
 
+## 웹 콘솔 (`web/`)
+
+React + TypeScript + Tailwind 운영 콘솔. 개요 대시보드, 플랫폼 준비도 판정·작업 항목, 릴리스 지식베이스(커널 지원 기간 차트),
+VINTF matrix 비교, OTA 패키지 등록·검사, 롤아웃 단계 운영(진행 추이·오류 코드·자동 중단 평가), Delta 후보, 감사 로그.
+명령 팔레트(⌘K), 라이트/다크 테마, 모바일 메뉴, 모든 차트의 표 보기를 지원한다.
+
+```sh
+cd web && npm ci && npm run build      # web/dist 생성 → backend 가 / 에서 서빙 (index.html no-cache, 해시 에셋 immutable)
+ANDROID_OS_DEV_MODE=1 .venv/bin/uvicorn --factory backend.app:create_app --port 8020   # http://127.0.0.1:8020
+.venv/bin/python scripts/seed_demo.py   # (개발 모드 전용) 실제 공개 OTA·AOSP matrix + 시뮬레이션 기기 데이터
+
+cd web && npm run dev                  # 개발 서버 http://127.0.0.1:5190 (API 는 8020 으로 프록시)
+```
+
 ## Backend API (P1 Readiness)
 
 ```sh
