@@ -1,0 +1,278 @@
+{
+  "kb_version": "2026-09-14.2",
+  "confidence_levels": [
+    "primary",
+    "secondary",
+    "unverified"
+  ],
+  "releases": [
+    {
+      "release": "13",
+      "api_level": 33,
+      "fcm_level": "7",
+      "fcm_level_confidence": "primary",
+      "supported_kernels": [
+        "android13-5.15",
+        "android13-5.10",
+        "android12-5.10"
+      ],
+      "vndk_supported": true,
+      "sources": [
+        "https://source.android.com/docs/core/architecture/kernel/android-common",
+        "https://source.android.com/docs/core/architecture/vintf/fcm",
+        "https://android.googlesource.com/platform/hardware/interfaces/+/refs/tags/android-13.0.0_r1/compatibility_matrices/"
+      ],
+      "fcm_matrices_in_tree": [
+        "3",
+        "4",
+        "5",
+        "6",
+        "7"
+      ],
+      "fcm_matrices_source": "https://android.googlesource.com/platform/hardware/interfaces/+/refs/tags/android-13.0.0_r1/compatibility_matrices/"
+    },
+    {
+      "release": "14",
+      "api_level": 34,
+      "fcm_level": "8",
+      "fcm_level_confidence": "primary",
+      "supported_kernels": [
+        "android14-6.1",
+        "android14-5.15",
+        "android13-5.15",
+        "android13-5.10",
+        "android12-5.10"
+      ],
+      "vndk_supported": true,
+      "sources": [
+        "https://source.android.com/docs/core/architecture/kernel/android-common",
+        "https://source.android.com/docs/core/architecture/vintf/fcm",
+        "https://android.googlesource.com/platform/hardware/interfaces/+/refs/tags/android-14.0.0_r1/compatibility_matrices/"
+      ],
+      "fcm_matrices_in_tree": [
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "fcm_matrices_source": "https://android.googlesource.com/platform/hardware/interfaces/+/refs/tags/android-14.0.0_r1/compatibility_matrices/"
+    },
+    {
+      "release": "15",
+      "api_level": 35,
+      "fcm_level": "202404",
+      "fcm_level_confidence": "primary",
+      "supported_kernels": [
+        "android15-6.6",
+        "android14-6.1",
+        "android14-5.15",
+        "android13-5.15",
+        "android13-5.10",
+        "android12-5.10"
+      ],
+      "vndk_supported": false,
+      "latest_cts": "15 R9",
+      "sources": [
+        "https://source.android.com/docs/core/architecture/kernel/android-common",
+        "https://source.android.com/docs/core/architecture/vndk",
+        "https://source.android.com/docs/compatibility/cts/downloads",
+        "https://android.googlesource.com/platform/hardware/interfaces/+/refs/tags/android-15.0.0_r1/compatibility_matrices/"
+      ],
+      "fcm_matrices_in_tree": [
+        "5",
+        "6",
+        "7",
+        "8",
+        "202404",
+        "202504"
+      ],
+      "fcm_matrices_source": "https://android.googlesource.com/platform/hardware/interfaces/+/refs/tags/android-15.0.0_r1/compatibility_matrices/"
+    },
+    {
+      "release": "16",
+      "api_level": 36,
+      "fcm_level": "202504",
+      "fcm_level_confidence": "primary",
+      "released": "2025-06-10",
+      "supported_kernels": [
+        "android16-6.12",
+        "android15-6.6",
+        "android14-6.1",
+        "android14-5.15",
+        "android13-5.15",
+        "android13-5.10",
+        "android12-5.10"
+      ],
+      "vndk_supported": false,
+      "latest_cts": "16 R6",
+      "sources": [
+        "https://source.android.com/docs/core/architecture/kernel/android-common",
+        "https://source.android.com/docs/whatsnew/android-16-release",
+        "https://android.googlesource.com/platform/hardware/interfaces/+/refs/tags/android-16.0.0_r1/compatibility_matrices/"
+      ],
+      "fcm_matrices_in_tree": [
+        "5",
+        "6",
+        "7",
+        "8",
+        "202404",
+        "202504",
+        "202604"
+      ],
+      "fcm_matrices_source": "https://android.googlesource.com/platform/hardware/interfaces/+/refs/tags/android-16.0.0_r1/compatibility_matrices/"
+    },
+    {
+      "release": "16-QPR2",
+      "api_level": "36.1",
+      "released": "2025-12-02",
+      "supported_kernels": [
+        "android16-6.12",
+        "android15-6.6",
+        "android14-6.1",
+        "android14-5.15",
+        "android13-5.15",
+        "android13-5.10",
+        "android12-5.10"
+      ],
+      "vndk_supported": false,
+      "latest_cts": "16.1 R4",
+      "sources": [
+        "https://android-developers.googleblog.com/2025/12/android-16-qpr2-is-released.html",
+        "https://source.android.com/docs/compatibility/cts/downloads"
+      ],
+      "fcm_matrices_in_tree": [
+        "5",
+        "6",
+        "7",
+        "8",
+        "202404",
+        "202504",
+        "202604"
+      ],
+      "fcm_matrices_source": "https://android.googlesource.com/platform/hardware/interfaces/+/refs/tags/android-16.0.0_r1/compatibility_matrices/"
+    },
+    {
+      "release": "17",
+      "api_level": 37,
+      "fcm_level": "202604",
+      "fcm_level_confidence": "primary",
+      "released": "2026-06-16",
+      "aosp_tag": "android-17.0.0_r1",
+      "default_spl": "2026-07-01",
+      "supported_kernels": [
+        "android17-6.18",
+        "android16-6.12",
+        "android15-6.6",
+        "android14-6.1",
+        "android14-5.15",
+        "android13-5.15",
+        "android13-5.10",
+        "android12-5.10"
+      ],
+      "kernels_unsupported_from": {
+        "android13-5.10": "17-QPR1",
+        "android12-5.10": "17-QPR1"
+      },
+      "vndk_supported": false,
+      "ion_supported": false,
+      "requires_sepolicy_memfd": true,
+      "aosp_source_readonly": true,
+      "latest_cts": "17 R2",
+      "sources": [
+        "https://source.android.com/docs/whatsnew/android-17-release",
+        "https://source.android.com/docs/core/architecture/kernel/android-common",
+        "https://source.android.com/docs/setup/reference/build-numbers",
+        "https://android.googlesource.com/platform/hardware/interfaces/+/refs/tags/android-17.0.0_r1/compatibility_matrices/"
+      ],
+      "fcm_matrices_in_tree": [
+        "7",
+        "8",
+        "202404",
+        "202504",
+        "202604",
+        "202704"
+      ],
+      "fcm_matrices_source": "https://android.googlesource.com/platform/hardware/interfaces/+/refs/tags/android-17.0.0_r1/compatibility_matrices/"
+    },
+    {
+      "release": "17-QPR1",
+      "api_level": "37.1",
+      "status": "beta",
+      "status_confidence": "secondary",
+      "supported_kernels": [
+        "android17-6.18",
+        "android16-6.12",
+        "android15-6.6",
+        "android14-6.1",
+        "android14-5.15",
+        "android13-5.15"
+      ],
+      "vndk_supported": false,
+      "ion_supported": false,
+      "requires_sepolicy_memfd": true,
+      "sources": [
+        "https://source.android.com/docs/core/architecture/kernel/android-common",
+        "https://www.droid-life.com/2026/08/17/android-17-qpr1-beta-9-update-released-for-pixel-phones/"
+      ],
+      "fcm_matrices_in_tree": [
+        "7",
+        "8",
+        "202404",
+        "202504",
+        "202604",
+        "202704"
+      ],
+      "fcm_matrices_source": "https://android.googlesource.com/platform/hardware/interfaces/+/refs/tags/android-17.0.0_r1/compatibility_matrices/"
+    }
+  ],
+  "kernel_branches": [
+    {
+      "branch": "android12-5.10",
+      "launch": "2020-12-13",
+      "eol": "2027-07-01"
+    },
+    {
+      "branch": "android13-5.10",
+      "launch": "2020-12-13",
+      "eol": "2027-07-01"
+    },
+    {
+      "branch": "android13-5.15",
+      "launch": "2021-10-31",
+      "eol": "2028-07-01"
+    },
+    {
+      "branch": "android14-5.15",
+      "launch": "2021-10-31",
+      "eol": "2028-07-01"
+    },
+    {
+      "branch": "android14-6.1",
+      "launch": "2022-12-11",
+      "eol": "2029-07-01"
+    },
+    {
+      "branch": "android15-6.6",
+      "launch": "2023-10-29",
+      "eol": "2028-07-01"
+    },
+    {
+      "branch": "android16-6.12",
+      "launch": "2024-11-17",
+      "eol": "2029-07-01"
+    },
+    {
+      "branch": "android17-6.18",
+      "launch": "2025-11-30",
+      "eol": "2030-07-01"
+    }
+  ],
+  "kernel_sources": [
+    "https://source.android.com/docs/core/architecture/kernel/android-common"
+  ],
+  "ion_source": "https://source.android.com/docs/whatsnew/android-17-release",
+  "page_size_16kb_source": "https://source.android.com/docs/core/architecture/16kb-page-size/16kb",
+  "fcm_rule_note": "fcm_matrices_in_tree 는 릴리스 태그 소스 트리에 존재하는 compatibility_matrix.<level>.xml 목록(개발 중 다음 레벨 포함 가능). 기기 target-level 이 목록 최솟값보다 낮으면 해당 매트릭스가 제거된 것."
+}
