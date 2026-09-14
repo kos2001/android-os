@@ -129,3 +129,30 @@ class AuthTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(TestClient is None, "fastapi not installed (use .venv)")
+class FrontendMountTests(unittest.TestCase):
+    def test_spa_served_with_cache_headers(self):
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as dist:
+            os.makedirs(os.path.join(dist, "assets"))
+            with open(os.path.join(dist, "index.html"), "w") as f:
+                f.write("<div id=root></div>")
+            with open(os.path.join(dist, "assets", "app-abc123.js"), "w") as f:
+                f.write("console.log(1)")
+            os.environ["ANDROID_OS_WEB_DIST"] = dist
+            self.addCleanup(os.environ.pop, "ANDROID_OS_WEB_DIST")
+            store = Store(":memory:")
+            self.addCleanup(store.close)
+            c = TestClient(create_app(store=store, api_keys="", auto_halt_interval_s=0, dev_mode=True))
+            index = c.get("/")
+            self.assertEqual((index.status_code, index.headers["cache-control"]), (200, "no-cache"))
+            self.assertEqual(c.get("/rollouts/1").text, "<div id=root></div>")  # SPA 폴백
+            asset = c.get("/assets/app-abc123.js")
+            self.assertIn("immutable", asset.headers["cache-control"])
+            self.assertEqual(c.get("/admin/v1/nope").status_code, 404)  # API 경로는 폴백하지 않음
+            self.assertEqual(c.get("/api/health").json()["status"], "ok")
+            self.assertEqual(c.get("/../pyproject.toml").status_code, 200)  # 경로 탈출 시 index 로 폴백
+            self.assertNotIn("setuptools", c.get("/../pyproject.toml").text)
