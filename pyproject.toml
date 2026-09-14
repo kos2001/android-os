@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "android-os-upgrade"
+version = "0.1.0"
+description = "Android OS upgrade backend core: OTA package inspection, update matching, rollout control, platform readiness"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["upgrade_core*"]
+
+[tool.setuptools.package-data]
+upgrade_core = ["data/*.json"]

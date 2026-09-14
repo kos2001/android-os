@@ -1,0 +1,10 @@
+ota-property-files=payload_metadata.bin:4534:197142,payload.bin:4534:3158523261,payload_properties.txt:3158527847:156,apex_info.pb:1970:1744,care_map.pb:3755:738,metadata:63:661,metadata.pb:786:1142                        
+ota-required-cache=0
+ota-streaming-property-files=payload.bin:4534:3158523261,payload_properties.txt:3158527847:156,apex_info.pb:1970:1744,care_map.pb:3755:738,metadata:63:661,metadata.pb:786:1142                          
+ota-type=AB
+post-build=google/lynx/lynx:17/CP2A.260705.006/15641320:user/release-keys
+post-build-incremental=15641320
+post-sdk-level=37
+post-security-patch-level=2026-07-05
+post-timestamp=1781499293
+pre-device=lynx
