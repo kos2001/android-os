@@ -1,0 +1,52 @@
+import type { ReactNode } from 'react'
+import { AppShell, Breadcrumbs, NAV } from './components/layout'
+import { useRoute } from './lib/hooks'
+import AuditPage from './pages/Audit'
+import DeltaPage from './pages/Delta'
+import KnowledgePage from './pages/Knowledge'
+import OverviewPage from './pages/Overview'
+import PackagesPage from './pages/Packages'
+import PlatformDetailPage from './pages/PlatformDetail'
+import PlatformsPage from './pages/Platforms'
+import RolloutDetailPage from './pages/RolloutDetail'
+import RolloutsPage from './pages/Rollouts'
+import SettingsPage from './pages/Settings'
+import VintfPage from './pages/Vintf'
+
+function labelOf(path: string): string {
+  return NAV.flatMap((g) => g.items).find((i) => i.path === path)?.label ?? path
+}
+
+export default function App() {
+  const { segments } = useRoute()
+  const [section, id] = segments
+  const base = `/${section ?? 'overview'}`
+  const numericId = id ? Number(id) : NaN
+
+  let page: ReactNode
+  const crumbs: { label: ReactNode; href?: string }[] = [{ label: labelOf(base), href: id ? `#${base}` : undefined }]
+
+  switch (section) {
+    case 'platforms':
+      page = Number.isFinite(numericId) ? <PlatformDetailPage id={numericId} /> : <PlatformsPage />
+      if (Number.isFinite(numericId)) crumbs.push({ label: `#${numericId}` })
+      break
+    case 'rollouts':
+      page = Number.isFinite(numericId) ? <RolloutDetailPage id={numericId} /> : <RolloutsPage />
+      if (Number.isFinite(numericId)) crumbs.push({ label: `#${numericId}` })
+      break
+    case 'knowledge': page = <KnowledgePage />; break
+    case 'vintf': page = <VintfPage />; break
+    case 'packages': page = <PackagesPage />; break
+    case 'delta': page = <DeltaPage />; break
+    case 'audit': page = <AuditPage />; break
+    case 'settings': page = <SettingsPage />; break
+    default: page = <OverviewPage />
+  }
+
+  return (
+    <AppShell crumbs={<Breadcrumbs items={crumbs} />}>
+      <div key={segments.join('/')} className="animate-fade-in">{page}</div>
+    </AppShell>
+  )
+}
