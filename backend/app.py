@@ -262,7 +262,8 @@ def _mount_frontend(app: FastAPI) -> None:
     if not index.is_file():
         return
     if (dist / "assets").is_dir():
-        app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+        app.mount("/assets", ImmutableStaticFiles(directory=dist / "assets"), name="assets")
+    no_cache = {"Cache-Control": "no-cache"}  # index.html 은 매번 재검증해야 새 해시 에셋을 받는다
 
     @app.get("/{path:path}", include_in_schema=False)
     def spa(path: str):
@@ -270,8 +271,17 @@ def _mount_frontend(app: FastAPI) -> None:
             raise HTTPException(404, "not found")
         candidate = (dist / path).resolve()
         if path and candidate.is_file() and candidate.is_relative_to(dist.resolve()):
-            return FileResponse(candidate)
-        return FileResponse(index)
+            return FileResponse(candidate, headers=no_cache)
+        return FileResponse(index, headers=no_cache)
+
+
+class ImmutableStaticFiles(StaticFiles):
+    """Vite 빌드 에셋은 파일명에 콘텐츠 해시가 있어 영구 캐시해도 안전하다."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
 
 
 def _check_release(release: str) -> None:
