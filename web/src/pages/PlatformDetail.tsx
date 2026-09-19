@@ -2,7 +2,7 @@ import { Cpu, ExternalLink, FileCog, FileUp, Play, ShieldAlert, Upload } from 'l
 import { useEffect, useRef, useState } from 'react'
 import { PageHeader } from '../components/layout'
 import { Drawer, useToast } from '../components/ui/overlay'
-import { Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, KeyValue, Mono, Segmented, Select,
+import { Button, Card, CardHeader, cx, EmptyState, ErrorBanner, Field, Input, KeyValue, Mono, Segmented, Select,
   Skeleton, Textarea } from '../components/ui/primitives'
 import { Badge, ReadyBadge, SeverityBadge, WORK_STATUS_LABEL } from '../components/ui/status'
 import { api, ApiError, type Finding, type KernelConfigHints, type Platform, type Severity, type UprevReport, type WorkStatus } from '../lib/api'
@@ -10,6 +10,7 @@ import { dateTime, relativeTime } from '../lib/format'
 import { useAsync } from '../lib/hooks'
 import PlatformDrivers from './PlatformDrivers'
 import { localized, useLang, useT } from '../lib/i18n'
+import { HUE, hueOf } from '../lib/palette'
 
 function FindingDrawer({ finding, onClose, onSaved }: { finding: Finding | null; onClose: () => void; onSaved: () => void }) {
   const toast = useToast()
@@ -68,8 +69,8 @@ function FindingDrawer({ finding, onClose, onSaved }: { finding: Finding | null;
             </section>
           )}
           {finding.work_item_id ? (
-            <section className="space-y-3 rounded-lg border border-line p-4">
-              <h3 className="text-xs font-medium text-muted">{t('작업 항목', 'Work item')}</h3>
+            <section className={cx('space-y-3 rounded-lg border-l-4 p-4 ring-1 ring-inset', HUE.violet.border, HUE.violet.ring)}>
+              <h3 className={cx('text-xs font-medium', HUE.violet.text)}>{t('작업 항목', 'Work item')}</h3>
               <Segmented value={status} onChange={setStatus}
                 items={(Object.keys(WORK_STATUS_LABEL) as WorkStatus[]).map((s) => ({ value: s, label: WORK_STATUS_LABEL[s] }))} />
               <div className="grid grid-cols-2 gap-3">
@@ -139,13 +140,13 @@ function KernelCard({ platform, uprev, kernelBranch, onKernelBranch, onChanged }
   const importCount = k?.modules.reduce((n, m) => n + m.undefined_count, 0) ?? 0
   return (
     <Card>
-      <CardHeader title={t('커널', 'Kernel')} description={t('uname -r · /proc/config.gz · vendor_dlkm 모듈(.ko)', 'uname -r · /proc/config.gz · vendor_dlkm modules (.ko)')} />
+      <CardHeader hue="indigo" title={t('커널', 'Kernel')} description={t('uname -r · /proc/config.gz · vendor_dlkm 모듈(.ko)', 'uname -r · /proc/config.gz · vendor_dlkm modules (.ko)')} />
       <div className="space-y-4 p-4">
         {kernel.error ? <ErrorBanner error={kernel.error} onRetry={kernel.reload} /> : (
           <KeyValue items={[
-            [t('브랜치', 'Branch'), <Mono>{platform.kernel_branch}</Mono>],
+            [t('브랜치', 'Branch'), <Badge hue={hueOf(platform.kernel_branch)}><Mono className="text-[11px]">{platform.kernel_branch}</Mono></Badge>],
             [t('릴리스', 'Release'), k?.kernel_release ? <Mono className="break-all">{k.kernel_release}</Mono> : '—'],
-            ['KMI generation', k?.kmi_generation ?? '—'],
+            ['KMI generation', k?.kmi_generation != null ? <Badge hue="purple">KMI {k.kmi_generation}</Badge> : '—'],
             ['config', hints ? configSummary(hints, t) : t('없음', 'None')],
             [t('vendor 모듈', 'vendor modules'), k?.modules.length
               ? t(`${k.modules.length}개 · import 심볼 ${importCount}`, `${k.modules.length} · ${importCount} imported symbols`)
@@ -171,7 +172,10 @@ function KernelCard({ platform, uprev, kernelBranch, onKernelBranch, onChanged }
                 <li key={c.branch}>
                   <button type="button" onClick={() => onKernelBranch(c.branch)}
                     className={`flex w-full flex-wrap items-center gap-1.5 rounded-md px-2 py-1.5 text-left hover:bg-page ${c.branch === kernelBranch ? 'bg-accent/5 ring-1 ring-inset ring-accent/30' : ''}`}>
-                    <Mono className="mr-auto text-ink">{c.branch}</Mono>
+                    <span className="mr-auto inline-flex items-center gap-1.5">
+                      <span aria-hidden className={cx('size-2 shrink-0 rounded-full', HUE[hueOf(c.branch)].dot)} />
+                      <Mono className="text-ink">{c.branch}</Mono>
+                    </span>
                     {c.is_current && <Badge>{t('현재', 'Current')}</Badge>}
                     {c.branch === uprev.recommended && <Badge tone="accent">{t('권장', 'Recommended')}</Badge>}
                     {c.eol_passed && <Badge tone="critical">{t('EOL 경과', 'Past EOL')}</Badge>}
@@ -267,7 +271,8 @@ export default function PlatformDetailPage({ id }: { id: number }) {
       <PageHeader
         title={p.name}
         description={t(`${p.soc} · 현재 Android ${p.android_version}`, `${p.soc} · currently Android ${p.android_version}`)}
-        meta={<><Badge><Mono>{p.kernel_branch}</Mono></Badge>{p.fcm_target_level && <Badge>FCM {p.fcm_target_level}</Badge>}
+        meta={<><Badge hue={hueOf(p.android_version)}>Android {p.android_version}</Badge>
+          <Badge hue={hueOf(p.kernel_branch)}><Mono className="text-[11px]">{p.kernel_branch}</Mono></Badge>{p.fcm_target_level && <Badge hue="cyan">FCM {p.fcm_target_level}</Badge>}
           {p.uses_ion && <Badge tone="serious">ION</Badge>}{p.uses_vndk && <Badge tone="serious">VNDK</Badge>}</>}
         actions={<>
           <input ref={fileRef} type="file" accept=".xml" multiple className="hidden" onChange={(e) => upload(e.target.files)} />
@@ -286,7 +291,7 @@ export default function PlatformDetailPage({ id }: { id: number }) {
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4">
           <Card>
-            <CardHeader title={t('프로파일', 'Profile')} />
+            <CardHeader hue="sky" title={t('프로파일', 'Profile')} />
             <div className="p-4">
               <KeyValue items={[
                 ['VNDK', p.uses_vndk ? t('사용', 'Used') : t('미사용', 'Not used')],
@@ -294,21 +299,28 @@ export default function PlatformDetailPage({ id }: { id: number }) {
                 [t('16 KB 페이지', '16 KB pages'), p.supports_16kb ? t('지원', 'Supported') : t('미지원', 'Not supported')],
                 ['memfd sepolicy', p.sepolicy_memfd_ready ? t('대응 완료', 'Done') : t('미대응', 'Pending')],
                 [t('지원 종료 목표', 'Support until'), p.support_until ?? '—'],
-                ['Manifest', p.manifest ? `HAL ${p.manifest.hal_count} · ${relativeTime(p.manifest.uploaded_at)}` : t('없음', 'None')],
+                ['Manifest', p.manifest
+                  ? <span className="inline-flex items-center gap-1.5"><Badge hue="sky">HAL {p.manifest.hal_count}</Badge><span className="text-muted">{relativeTime(p.manifest.uploaded_at)}</span></span>
+                  : t('없음', 'None')],
               ]} />
             </div>
           </Card>
           <KernelCard platform={p} uprev={uprev.data} kernelBranch={kernelBranch} onKernelBranch={setKernelBranch}
             onChanged={() => { platform.reload(); uprev.reload() }} />
           <Card>
-            <CardHeader title={t('판정 이력', 'Check history')} />
+            <CardHeader hue="teal" title={t('판정 이력', 'Check history')} />
             {runs.data?.length ? (
               <ul className="divide-y divide-line">
                 {runs.data.map((r) => (
                   <li key={r.id}>
                     <button onClick={() => setRunId(r.id)}
                       className={`flex w-full items-center justify-between px-4 py-2.5 text-left hover:bg-page ${r.id === runId ? 'bg-accent/5' : ''}`}>
-                      <span className="text-[13px] text-ink">Android {r.target_release}</span>
+                      <span className="flex items-center gap-2 text-[13px] text-ink">
+                        <span aria-hidden className={cx('grid size-6 shrink-0 place-items-center rounded-md text-[10px] font-semibold ring-1 ring-inset', HUE[hueOf(r.target_release)].soft, HUE[hueOf(r.target_release)].text, HUE[hueOf(r.target_release)].ring)}>
+                          {r.target_release.slice(0, 2)}
+                        </span>
+                        Android {r.target_release}
+                      </span>
                       <span className="text-xs text-muted">{relativeTime(r.created_at)} · {r.created_by}</span>
                     </button>
                   </li>
@@ -327,7 +339,12 @@ export default function PlatformDetailPage({ id }: { id: number }) {
           ) : (
             <>
               <CardHeader
-                title={<span className="flex items-center gap-2">Android {run.data.current_release} → {run.data.target_release} <ReadyBadge ready={run.data.ready} /></span>}
+                hue={hueOf(run.data.target_release)}
+                title={<span className="flex flex-wrap items-center gap-2">
+                  <Badge hue={hueOf(run.data.current_release)}>Android {run.data.current_release}</Badge>
+                  <span className="text-muted">→</span>
+                  <Badge hue={hueOf(run.data.target_release)}>Android {run.data.target_release}</Badge>
+                  <ReadyBadge ready={run.data.ready} /></span>}
                 description={`${dateTime(run.data.created_at)} · KB ${run.data.kb_version} · ${t('기준일', 'as of')} ${run.data.as_of}`
                   + (run.data.kernel_branch ? ` · ${t('커널', 'kernel')} ${run.data.kernel_branch}` : '')}
                 actions={<Segmented value={filter} onChange={setFilter} items={[
@@ -347,6 +364,7 @@ export default function PlatformDetailPage({ id }: { id: number }) {
                         <div className="w-20 shrink-0 pt-0.5"><SeverityBadge severity={f.severity} /></div>
                         <div className="min-w-0 flex-1">
                           <p className="text-[13px] font-medium text-ink">{ft.title}</p>
+                          <p className="mt-0.5"><Badge hue={hueOf(f.rule_id.split(/[._-]/)[0])} className="font-mono">{f.rule_id}</Badge></p>
                           <p className="mt-0.5 line-clamp-2 text-xs text-muted">{ft.detail}</p>
                         </div>
                         <div className="shrink-0 text-right text-xs">

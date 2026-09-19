@@ -1,14 +1,38 @@
-import { Archive, Boxes, Plus, ScanSearch } from 'lucide-react'
+import { Archive, Boxes, Layers, Plus, ScanSearch, Smartphone, SquareStack } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { PageHeader } from '../components/layout'
 import { ConfirmDialog, Dialog, Drawer, useToast } from '../components/ui/overlay'
-import { Button, Card, CopyButton, EmptyState, ErrorBanner, Field, Input, KeyValue, Mono, Segmented } from '../components/ui/primitives'
+import { Button, Card, CopyButton, cx, EmptyState, ErrorBanner, Field, Input, KeyValue, Mono, Segmented } from '../components/ui/primitives'
 import { Badge, PackageBadge } from '../components/ui/status'
 import { DataTable } from '../components/ui/table'
 import { api, type InspectResult, type OtaPackage } from '../lib/api'
-import { bytes, dateTime, num, relativeTime, shortFingerprint } from '../lib/format'
+import { bytes, dateTime, num, parseFingerprint, relativeTime, shortFingerprint } from '../lib/format'
 import { useAsync } from '../lib/hooks'
 import { useT } from '../lib/i18n'
+import { HUE, hueOf, type Hue } from '../lib/palette'
+
+// 패키지 유형(장식용 구분) — 상태는 PackageBadge 가 따로 전한다
+const TYPE_HUE: Record<string, Hue> = { full: 'indigo', incremental: 'teal' }
+
+function TypeBadge({ type }: { type: string }) {
+  return <Badge hue={TYPE_HUE[type] ?? hueOf(type)} icon={type === 'incremental' ? <Layers className="size-3" /> : <SquareStack className="size-3" />}>{type}</Badge>
+}
+
+function DeviceBadge({ device }: { device: string }) {
+  return <Badge hue={hueOf(device)} icon={<Smartphone className="size-3" />}>{device}</Badge>
+}
+
+/** 대상 빌드: 릴리스는 색 배지, 빌드 ID 는 고정폭 글자 */
+function BuildCell({ fingerprint }: { fingerprint: string }) {
+  const f = parseFingerprint(fingerprint)
+  if (!f.release) return <Mono>{shortFingerprint(fingerprint)}</Mono>
+  return (
+    <span className="flex items-center gap-1.5">
+      <Badge hue={hueOf(`Android ${f.release}`)}>Android {f.release}</Badge>
+      <Mono>{f.buildId}</Mono>
+    </span>
+  )
+}
 
 function RegisterDialog({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: () => void }) {
   const t = useT()
@@ -60,14 +84,14 @@ function RegisterDialog({ open, onClose, onDone }: { open: boolean; onClose: () 
           <div className="rounded-lg border border-line bg-page p-4">
             <div className="mb-3 flex items-center gap-2">
               <PackageBadge status={inspect.ready ? 'ready' : 'rejected'} />
-              <Badge>{inspect.package_type}</Badge>
+              <TypeBadge type={inspect.package_type} />
               {inspect.range_requests != null && (
                 <span className="text-xs text-muted">{t(`Range 요청 ${inspect.range_requests}회 · ${bytes(inspect.bytes_fetched)} 읽음 / ${bytes(inspect.file_size)}`, `${inspect.range_requests} Range requests · read ${bytes(inspect.bytes_fetched)} / ${bytes(inspect.file_size)}`)}</span>
               )}
             </div>
             <KeyValue items={[
               [t('대상 빌드', 'Target build'), <Mono>{inspect.post_build}</Mono>],
-              [t('기기', 'Device'), inspect.pre_device.join(', ')],
+              [t('기기', 'Device'), <span className="flex flex-wrap gap-1">{inspect.pre_device.map((d) => <DeviceBadge key={d} device={d} />)}</span>],
               [t('보안 패치', 'Security patch'), inspect.post_spl],
               ['SDK', inspect.post_sdk_level ?? '—'],
               [t('Source 빌드', 'Source builds'), inspect.pre_builds.length ? inspect.pre_builds.map((b) => <Mono key={b} className="block">{b}</Mono>) : '— (full)'],
@@ -119,10 +143,10 @@ export default function PackagesPage() {
             action={<Button variant="primary" onClick={() => setOpen(true)}>{t('패키지 등록', 'Register package')}</Button>} />}
           columns={[
             { key: 'status', header: t('상태', 'Status'), cell: (p) => <PackageBadge status={p.status} /> },
-            { key: 'device', header: t('기기', 'Device'), sort: (p) => p.device, cell: (p) => <span className="font-medium">{p.device}</span> },
-            { key: 'target', header: t('대상 빌드', 'Target build'), cell: (p) => <Mono>{shortFingerprint(p.post_build).split(' · ').slice(1).join(' · ')}</Mono> },
+            { key: 'device', header: t('기기', 'Device'), sort: (p) => p.device, cell: (p) => <DeviceBadge device={p.device} /> },
+            { key: 'target', header: t('대상 빌드', 'Target build'), cell: (p) => <BuildCell fingerprint={p.post_build} /> },
             { key: 'type', header: t('유형', 'Type'), sort: (p) => p.type, cell: (p) => (
-              <span className="flex items-center gap-1.5"><Badge tone={p.type === 'incremental' ? 'accent' : 'neutral'}>{p.type}</Badge>
+              <span className="flex items-center gap-1.5"><TypeBadge type={p.type} />
                 {p.type === 'incremental' && <span className="text-xs text-muted">source {p.pre_builds.length}</span>}</span>) },
             { key: 'spl', header: t('보안 패치', 'Security patch'), sort: (p) => p.post_spl, cell: (p) => p.post_spl },
             { key: 'size', header: t('크기', 'Size'), align: 'right', sort: (p) => p.file_size, cell: (p) => bytes(p.file_size) },
@@ -133,7 +157,7 @@ export default function PackagesPage() {
       </Card>
 
       <Drawer open={!!selected} onClose={() => setSelected(null)} title={selected ? shortFingerprint(selected.post_build) : ''}
-        subtitle={selected && <span className="flex items-center gap-2"><PackageBadge status={selected.status} /><Badge>{selected.type}</Badge>#{selected.id}</span>}
+        subtitle={selected && <span className="flex items-center gap-2"><PackageBadge status={selected.status} /><TypeBadge type={selected.type} /><DeviceBadge device={selected.device} />#{selected.id}</span>}
         actions={selected?.status === 'ready' && (
           <Button size="sm" variant="ghost" icon={<Archive className="size-3.5" />} onClick={() => setRetire(selected)}>Retire</Button>)}>
         {selected && (
@@ -178,8 +202,8 @@ ${Object.entries(selected.payload_properties).map(([k, v]) => `${k}=${v}`).join(
               <ul className="space-y-1">{selected.streaming_property_files.split(',').map((e) => {
                 const [name, offset, size] = e.split(':')
                 return (
-                  <li key={e} className="flex justify-between gap-3 rounded bg-page px-2.5 py-1.5 text-xs">
-                    <Mono>{name}</Mono><span className="tabular text-muted">@{num(Number(offset))} · {bytes(Number(size))}</span>
+                  <li key={e} className={cx('flex justify-between gap-3 rounded border-l-4 bg-page px-2.5 py-1.5 text-xs', HUE[hueOf(name)].border)}>
+                    <Mono className={HUE[hueOf(name)].text}>{name}</Mono><span className="tabular text-muted">@{num(Number(offset))} · {bytes(Number(size))}</span>
                   </li>
                 )
               })}</ul>

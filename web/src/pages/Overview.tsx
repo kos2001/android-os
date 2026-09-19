@@ -1,18 +1,20 @@
-import { AlertOctagon, Boxes, Cpu, RefreshCw, Rocket, ShieldCheck, Smartphone, Undo2, XCircle } from 'lucide-react'
+import { AlertOctagon, AlertTriangle, Boxes, Cpu, RefreshCw, Rocket, ShieldCheck, Smartphone, Undo2, XCircle } from 'lucide-react'
 import { SegmentBar } from '../components/charts/charts'
 import { PageHeader, StatTile } from '../components/layout'
 import { Badge, ReadyBadge } from '../components/ui/status'
-import { Button, Card, CardHeader, EmptyState, ErrorBanner, Skeleton } from '../components/ui/primitives'
+import { Button, Card, CardHeader, cx, EmptyState, ErrorBanner, Skeleton } from '../components/ui/primitives'
 import { api } from '../lib/api'
 import { num, pct, relativeTime } from '../lib/format'
 import { navigate, useAsync } from '../lib/hooks'
 import { useT } from '../lib/i18n'
+import { HUE, hueOf } from '../lib/palette'
 
 export default function OverviewPage() {
   const t = useT()
   const ov = useAsync(() => api.overview(), [], 15_000)
   const d = ov.data
   const outcomes = d ? d.boot_success_24h + d.boot_fallback_24h : 0
+  const total = (counts: Partial<Record<string, number>>) => Object.values(counts).reduce<number>((a, v) => a + (v ?? 0), 0)
 
   return (
     <>
@@ -20,7 +22,7 @@ export default function OverviewPage() {
         title={t('개요', 'Overview')}
         description={t('플랫폼 업그레이드 준비도와 OTA 배포 현황을 한눈에 봅니다. 15초마다 갱신됩니다.', 'Platform upgrade readiness and OTA rollout status at a glance. Refreshes every 15 seconds.')}
         meta={d && <>
-          <Badge>KB {d.kb_version}</Badge>
+          <Badge hue="violet">KB {d.kb_version}</Badge>
           {d.dev_mode && <Badge tone="warning" icon={<AlertOctagon className="size-3" />}>{t('개발 모드 · 인증 꺼짐', 'Dev mode · auth off')}</Badge>}
         </>}
         actions={<Button icon={<RefreshCw className="size-3.5" />} onClick={ov.reload}>{t('새로고침', 'Refresh')}</Button>}
@@ -29,19 +31,19 @@ export default function OverviewPage() {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {!d ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[92px] rounded-lg" />) : <>
-          <StatTile icon={<Smartphone className="size-3.5" />} label={t('24시간 체크인 기기', 'Devices checked in (24h)')} value={num(d.devices_checked_in_24h)} />
-          <StatTile icon={<ShieldCheck className="size-3.5" />} label={t('부팅 성공 (24h)', 'Boot success (24h)')} value={num(d.boot_success_24h)}
+          <StatTile hue="sky" icon={<Smartphone className="size-3.5" />} label={t('24시간 체크인 기기', 'Devices checked in (24h)')} value={num(d.devices_checked_in_24h)} />
+          <StatTile hue="emerald" icon={<ShieldCheck className="size-3.5" />} label={t('부팅 성공 (24h)', 'Boot success (24h)')} value={num(d.boot_success_24h)}
             sub={outcomes ? t(`판정 ${num(outcomes)}건 중 ${pct(d.boot_success_24h / outcomes)}`, `${pct(d.boot_success_24h / outcomes)} of ${num(outcomes)} outcomes`) : t('판정된 설치 없음', 'No install outcomes')} />
-          <StatTile icon={<Undo2 className="size-3.5" />} label={t('부팅 폴백 (24h)', 'Boot fallback (24h)')} value={num(d.boot_fallback_24h)}
+          <StatTile hue="amber" icon={<Undo2 className="size-3.5" />} label={t('부팅 폴백 (24h)', 'Boot fallback (24h)')} value={num(d.boot_fallback_24h)}
             sub={t('새 슬롯 부팅 실패 후 이전 빌드', 'Reverted to previous build after new slot failed to boot')} />
-          <StatTile icon={<XCircle className="size-3.5" />} label={t('설치 실패 (24h)', 'Install failures (24h)')} value={num(d.install_failures_24h)}
+          <StatTile hue="rose" icon={<XCircle className="size-3.5" />} label={t('설치 실패 (24h)', 'Install failures (24h)')} value={num(d.install_failures_24h)}
             sub={t('사용자 취소 제외', 'Excludes user cancellations')} />
         </>}
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-5">
         <Card className="lg:col-span-3">
-          <CardHeader title={t('플랫폼 준비도', 'Platform readiness')} description={t('플랫폼별 최신 판정 결과', 'Latest check result per platform')}
+          <CardHeader hue="indigo" title={t('플랫폼 준비도', 'Platform readiness')} description={t('플랫폼별 최신 판정 결과', 'Latest check result per platform')}
             actions={<Button size="sm" variant="ghost" onClick={() => navigate('/platforms')}>{t('전체 보기', 'View all')}</Button>} />
           {!d ? <div className="space-y-3 p-4">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-10" />)}</div>
             : d.platforms.length === 0 ? (
@@ -52,15 +54,24 @@ export default function OverviewPage() {
               <ul className="divide-y divide-line">
                 {d.platforms.map((p) => (
                   <li key={p.id}>
-                    <a href={`#/platforms/${p.id}`} className="flex items-center gap-4 px-4 py-3 hover:bg-page">
+                    <a href={`#/platforms/${p.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-page">
+                      <span aria-hidden className={cx('flex size-8 shrink-0 items-center justify-center rounded-md ring-1 ring-inset',
+                        HUE[hueOf(p.name)].soft, HUE[hueOf(p.name)].text, HUE[hueOf(p.name)].ring)}>
+                        <Cpu className="size-4" />
+                      </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[13px] font-medium text-ink">{p.name}</p>
-                        <p className="mt-0.5 text-xs text-muted">{p.soc} · Android {p.android_version} · <span className="font-mono">{p.kernel_branch}</span></p>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+                          <span>{p.soc}</span>
+                          <Badge hue={hueOf(`android-${p.android_version}`)}>Android {p.android_version}</Badge>
+                          <Badge hue={hueOf(p.kernel_branch)} className="font-mono">{p.kernel_branch}</Badge>
+                        </div>
                       </div>
                       {p.latest_run ? (
                         <div className="flex items-center gap-3 text-right">
-                          <div className="hidden text-xs text-muted sm:block">
-                            → Android {p.latest_run.target_release}<br />{relativeTime(p.latest_run.created_at)}
+                          <div className="hidden flex-col items-end gap-0.5 text-xs text-muted sm:flex">
+                            <Badge hue={hueOf(`android-${p.latest_run.target_release}`)}>→ Android {p.latest_run.target_release}</Badge>
+                            <span>{relativeTime(p.latest_run.created_at)}</span>
                           </div>
                           <ReadyBadge ready={p.latest_run.ready} />
                         </div>
@@ -71,16 +82,18 @@ export default function OverviewPage() {
               </ul>
             )}
           {d && (d.open_work_items.blocker || d.open_work_items.warning) ? (
-            <div className="border-t border-line px-4 py-3 text-xs text-ink-2">
-              {t('미해결 작업 항목', 'Open work items')} · Blocker <b className="text-ink">{num(d.open_work_items.blocker ?? 0)}</b> · Warning <b className="text-ink">{num(d.open_work_items.warning ?? 0)}</b>
+            <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3 text-xs text-ink-2">
+              <span>{t('미해결 작업 항목', 'Open work items')}</span>
+              <Badge tone="critical" icon={<AlertOctagon className="size-3" />}>Blocker <b>{num(d.open_work_items.blocker ?? 0)}</b></Badge>
+              <Badge tone="warning" icon={<AlertTriangle className="size-3" />}>Warning <b>{num(d.open_work_items.warning ?? 0)}</b></Badge>
             </div>
           ) : null}
         </Card>
 
         <div className="space-y-4 lg:col-span-2">
           <Card>
-            <CardHeader title={t('롤아웃', 'Rollouts')} description={t('상태별 개수', 'Count by status')}
-              actions={<Button size="sm" variant="ghost" onClick={() => navigate('/rollouts')}>{t('전체 보기', 'View all')}</Button>} />
+            <CardHeader hue="orange" title={t('롤아웃', 'Rollouts')} description={t('상태별 개수', 'Count by status')}
+              actions={<>{d && <Badge hue="orange" icon={<Rocket className="size-3" />}>{t(`총 ${num(total(d.rollouts))}개`, `${num(total(d.rollouts))} total`)}</Badge>}<Button size="sm" variant="ghost" onClick={() => navigate('/rollouts')}>{t('전체 보기', 'View all')}</Button></>} />
             <div className="p-4">
               {!d ? <Skeleton className="h-14" /> : (
                 <SegmentBar segments={[
@@ -94,8 +107,8 @@ export default function OverviewPage() {
             </div>
           </Card>
           <Card>
-            <CardHeader title={t('OTA 패키지', 'OTA packages')} description={t('등록 상태별 개수', 'Count by registration status')}
-              actions={<Button size="sm" variant="ghost" onClick={() => navigate('/packages')}>{t('전체 보기', 'View all')}</Button>} />
+            <CardHeader hue="emerald" title={t('OTA 패키지', 'OTA packages')} description={t('등록 상태별 개수', 'Count by registration status')}
+              actions={<>{d && <Badge hue="emerald" icon={<Boxes className="size-3" />}>{t(`총 ${num(total(d.packages))}개`, `${num(total(d.packages))} total`)}</Badge>}<Button size="sm" variant="ghost" onClick={() => navigate('/packages')}>{t('전체 보기', 'View all')}</Button></>} />
             <div className="p-4">
               {!d ? <Skeleton className="h-14" /> : (
                 <SegmentBar segments={[
