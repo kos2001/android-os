@@ -6,11 +6,13 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
+from .kernel import (ABI_MONITOR_SOURCE, KernelModule, branch_key, check_modules, recommended_uprev,
+                     uprev_candidates)
 from .vintf import Manifest, Matrix, check_manifest
 
 DATA = Path(__file__).resolve().parent / "data" / "releases.json"
@@ -61,7 +63,7 @@ def release_key(release: str) -> tuple[int, int]:
         raise ValueError(f"bad release name {release!r} (expected '17' or '17-QPR1')") from exc
 
 
-def _release(kb: dict, release: str) -> dict:
+def release_entry(kb: dict, release: str) -> dict:
     for entry in kb["releases"]:
         if entry["release"] == release:
             return entry
@@ -73,6 +75,17 @@ def _kernel(kb: dict, branch: str) -> dict | None:
     return next((k for k in kb["kernel_branches"] if k["branch"] == branch), None)
 
 
+def _uprev_hint(p: PlatformProfile, target: dict, kb: dict, as_of: date) -> str:
+    try:
+        best = recommended_uprev(uprev_candidates(kb, target, p.kernel_branch, as_of, p.support_until))
+    except KeyError:
+        return ""
+    if best is None or best["is_current"]:
+        return ""
+    gap = " — 제품 지원 종료 목표까지 덮는 브랜치 없음" if best["covers_support_until"] is False else ""
+    return f" 권장 uprev 대상: {best['branch']} (EOL {best['eol']}{gap})."
+
+
 def _rule_kernel(p: PlatformProfile, target: dict, kb: dict, as_of: date) -> list[Finding]:
     out: list[Finding] = []
     src = tuple(kb["kernel_sources"])
@@ -80,25 +93,54 @@ def _rule_kernel(p: PlatformProfile, target: dict, kb: dict, as_of: date) -> lis
     if kernel is None:
         return [Finding("KERNEL_UNKNOWN", "warning", f"알 수 없는 커널 브랜치 {p.kernel_branch}",
                         "지식베이스의 ACK 브랜치 목록에 없음. GKI 브랜치명(androidNN-X.Y)을 확인할 것.", src)]
+    hint = _uprev_hint(p, target, kb, as_of)
     if p.kernel_branch not in target["supported_kernels"]:
         out.append(Finding("KERNEL_COMPAT", "blocker",
                            f"{p.kernel_branch} 는 Android {target['release']} 에서 지원되지 않음",
-                           "지원 커널: " + ", ".join(target["supported_kernels"]) + ". 커널 uprev 필요.", src))
+                           "지원 커널: " + ", ".join(target["supported_kernels"]) + ". 커널 uprev 필요." + hint, src))
     else:
         dropped_at = target.get("kernels_unsupported_from", {}).get(p.kernel_branch)
         if dropped_at:
             out.append(Finding("KERNEL_COMPAT_QPR", "warning",
                                f"{p.kernel_branch} 는 Android {dropped_at} 부터 지원되지 않음",
-                               f"Android {target['release']} 는 가능하나 {dropped_at} 이상 업데이트를 하려면 커널 uprev 필요.",
-                               src))
+                               f"Android {target['release']} 는 가능하나 {dropped_at} 이상 업데이트를 하려면 커널 uprev 필요."
+                               + hint, src))
     eol = date.fromisoformat(kernel["eol"])
     if eol <= as_of:
         out.append(Finding("KERNEL_EOL", "blocker", f"{p.kernel_branch} EOL({eol}) 경과",
-                           "EOL 커널은 보안 패치·GKI respin 이 제공되지 않음.", src))
+                           "EOL 커널은 보안 패치·GKI respin 이 제공되지 않음." + hint, src))
     elif p.support_until and eol < p.support_until:
         out.append(Finding("KERNEL_EOL", "warning",
                            f"{p.kernel_branch} EOL({eol}) 이 제품 지원 종료 목표({p.support_until}) 보다 이름",
-                           "지원 기간 중 커널 major 업그레이드 계획이 필요.", src))
+                           "지원 기간 중 커널 major 업그레이드 계획이 필요." + hint, src))
+    return out
+
+
+MAX_LISTED_SYMBOLS = 20
+
+
+def _rule_kmi(modules: list[KernelModule], kmi_symbols: set[str], branch: str) -> list[Finding]:
+    """vendor 모듈 × 목표 브랜치 KMI symbol list. 최종 판정은 ABI 도구·실제 로드이므로 warning 이하."""
+    report = check_modules(modules, kmi_symbols, branch)
+    src = (ABI_MONITOR_SOURCE,)
+    out = []
+    for sym, users in sorted(report.missing.items())[:MAX_LISTED_SYMBOLS]:
+        out.append(Finding("KMI_SYMBOL_MISSING", "warning", f"{sym} 가 {branch} KMI symbol list 에 없음",
+                           f"사용 모듈: {', '.join(sorted(users))}. vendor symbol list 에 추가 요청하거나 "
+                           "해당 심볼 의존을 제거해야 GKI 커널에서 모듈이 로드됨.", src))
+    if len(report.missing) > MAX_LISTED_SYMBOLS:
+        rest = sorted(report.missing)[MAX_LISTED_SYMBOLS:]
+        out.append(Finding("KMI_SYMBOL_MISSING", "warning", f"그 외 {len(rest)}개 심볼이 {branch} KMI 에 없음",
+                           ", ".join(rest[:200]), src))
+    if report.rebuild_required:
+        out.append(Finding("KERNEL_MODULE_REBUILD", "info",
+                           f"vendor 모듈 {len(report.rebuild_required)}개가 {branch} 이외 브랜치로 빌드됨",
+                           "vermagic 기준. 목표 브랜치로 재빌드 필요: " + ", ".join(sorted(report.rebuild_required)),
+                           src))
+    if report.unknown_vermagic:
+        out.append(Finding("KERNEL_MODULE_VERMAGIC", "info",
+                           f"vendor 모듈 {len(report.unknown_vermagic)}개의 vermagic 이 GKI 형식이 아님",
+                           ", ".join(sorted(report.unknown_vermagic)), (ABI_MONITOR_SOURCE,)))
     return out
 
 
@@ -162,25 +204,41 @@ def _rule_manifest(manifest: Manifest, matrix: Matrix) -> list[Finding]:
 
 def evaluate(profile: PlatformProfile, target_release: str, as_of: date,
              kb: dict | None = None, manifest: Manifest | None = None,
-             target_matrix: Matrix | None = None) -> dict:
+             target_matrix: Matrix | None = None, target_kernel_branch: str | None = None,
+             kernel_modules: list[KernelModule] | None = None, kmi_symbols: set[str] | None = None) -> dict:
     """readiness_run.summary 형태의 결과를 반환한다.
 
     manifest 와 target_matrix(목표 릴리스 트리의 매트릭스)를 주면 HAL 단위 비교 결과를 포함한다.
+    target_kernel_branch 를 주면 그 커널로 uprev 한 뒤를 기준으로 커널 규칙을 평가하고,
+    kernel_modules·kmi_symbols(그 브랜치의 KMI symbol list)를 주면 vendor 모듈 심볼 검사를 포함한다.
     """
     kb = kb or load_kb()
-    target = _release(kb, target_release)
+    target = release_entry(kb, target_release)
     if release_key(target_release) <= release_key(profile.android_version):
         raise ValueError(f"target {target_release} is not newer than current {profile.android_version}")
-    findings = (_rule_kernel(profile, target, kb, as_of) + _rule_fcm(profile, target)
+    kernel_profile = profile
+    uprev: list[Finding] = []
+    if target_kernel_branch and target_kernel_branch != profile.kernel_branch:
+        if branch_key(target_kernel_branch) < branch_key(profile.kernel_branch):
+            raise ValueError(f"target kernel {target_kernel_branch} is older than current {profile.kernel_branch}")
+        kernel_profile = replace(profile, kernel_branch=target_kernel_branch)
+        uprev.append(Finding("KERNEL_UPREV_PLANNED", "info",
+                             f"커널 uprev 계획 {profile.kernel_branch} → {target_kernel_branch} 기준으로 판정",
+                             "vendor 모듈을 목표 브랜치 KMI 기준으로 재빌드하고 vendor symbol list·ABI 검사를 갱신할 것.",
+                             tuple(kb["kernel_sources"])))
+    findings = (uprev + _rule_kernel(kernel_profile, target, kb, as_of) + _rule_fcm(profile, target)
                 + _rule_vendor(profile, target, kb))
     if manifest is not None and target_matrix is not None:
         findings += _rule_manifest(manifest, target_matrix)
+    if kernel_modules and kmi_symbols is not None:
+        findings += _rule_kmi(kernel_modules, kmi_symbols, kernel_profile.kernel_branch)
     findings.sort(key=lambda f: (SEVERITY_ORDER[f.severity], f.rule_id))
     counts = {s: sum(f.severity == s for f in findings) for s in SEVERITY_ORDER}
     return {
         "platform": profile.name,
         "current_release": profile.android_version,
         "target_release": target_release,
+        "kernel_branch": kernel_profile.kernel_branch,
         "kb_version": kb["kb_version"],
         "as_of": as_of.isoformat(),
         "ready": counts["blocker"] == 0,

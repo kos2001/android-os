@@ -1,11 +1,11 @@
-import { ExternalLink, FileUp, Play, ShieldAlert, Upload } from 'lucide-react'
+import { Cpu, ExternalLink, FileCog, FileUp, Play, ShieldAlert, Upload } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { PageHeader } from '../components/layout'
 import { Drawer, useToast } from '../components/ui/overlay'
 import { Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, KeyValue, Mono, Segmented, Select,
   Skeleton, Textarea } from '../components/ui/primitives'
 import { Badge, ReadyBadge, SeverityBadge, WORK_STATUS_LABEL } from '../components/ui/status'
-import { api, type Finding, type Severity, type WorkStatus } from '../lib/api'
+import { api, ApiError, type Finding, type Platform, type Severity, type UprevReport, type WorkStatus } from '../lib/api'
 import { dateTime, relativeTime } from '../lib/format'
 import { useAsync } from '../lib/hooks'
 
@@ -87,6 +87,94 @@ function FindingDrawer({ finding, onClose, onSaved }: { finding: Finding | null;
   )
 }
 
+const KERNEL_RELEASE_RE = /^\d+\.\d+\.\d+-android\d+-\d+(-.+)?$/
+
+function KernelCard({ platform, uprev, kernelBranch, onKernelBranch, onChanged }: {
+  platform: Platform; uprev: UprevReport | undefined; kernelBranch: string; onKernelBranch: (b: string) => void
+  onChanged: () => void
+}) {
+  const toast = useToast()
+  const kernel = useAsync(() => api.kernel(platform.id).catch((e) => {
+    if (e instanceof ApiError && e.status === 404) return null
+    throw e
+  }), [platform.id, platform.kernel?.uploaded_at])
+  const [release, setRelease] = useState('')
+  const [busy, setBusy] = useState<'release' | 'config' | 'modules'>()
+  const configRef = useRef<HTMLInputElement>(null)
+  const modulesRef = useRef<HTMLInputElement>(null)
+
+  const send = async (kind: 'release' | 'config' | 'modules', parts: Parameters<typeof api.uploadKernel>[1]) => {
+    setBusy(kind)
+    try {
+      const r = await api.uploadKernel(platform.id, parts)
+      const h = r.config_hints
+      toast({ kind: 'success', title: kind === 'modules' ? `모듈 ${r.modules.length}개 분석` : '커널 정보를 반영했습니다',
+        description: h ? `${h.page_size_kb ?? '?'} KB 페이지 · ION ${h.uses_ion ? '사용' : '미사용'} · DMA-BUF heaps ${h.dmabuf_heaps ? '있음' : '없음'}`
+          : undefined })
+      setRelease('')
+      onChanged()
+    } catch (e) {
+      toast({ kind: 'error', title: '커널 산출물 업로드 실패', description: (e as Error).message })
+    } finally {
+      setBusy(undefined)
+      if (configRef.current) configRef.current.value = ''
+      if (modulesRef.current) modulesRef.current.value = ''
+    }
+  }
+
+  const k = kernel.data
+  const hints = k?.config?.hints
+  return (
+    <Card>
+      <CardHeader title="커널" description="uname -r · /proc/config.gz · vendor_dlkm 모듈(.ko)" />
+      <div className="space-y-4 p-4">
+        {kernel.error ? <ErrorBanner error={kernel.error} onRetry={kernel.reload} /> : (
+          <KeyValue items={[
+            ['브랜치', <Mono>{platform.kernel_branch}</Mono>],
+            ['릴리스', k?.kernel_release ? <Mono className="break-all">{k.kernel_release}</Mono> : '—'],
+            ['KMI generation', k?.kmi_generation ?? '—'],
+            ['config', hints ? `${hints.page_size_kb ?? '?'} KB 페이지 · ION ${hints.uses_ion ? '사용' : '미사용'} · DMA-BUF heaps ${hints.dmabuf_heaps ? '있음' : '없음'}` : '없음'],
+            ['vendor 모듈', k?.modules.length ? `${k.modules.length}개 · import 심볼 ${k.modules.reduce((n, m) => n + m.undefined_count, 0)}` : '없음'],
+          ]} />
+        )}
+        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); send('release', { kernel_release: release.trim() }) }}>
+          <Input value={release} onChange={(e) => setRelease(e.target.value)} placeholder="6.1.75-android14-11-g…" aria-label="uname -r" className="font-mono" />
+          <Button type="submit" loading={busy === 'release'} disabled={!KERNEL_RELEASE_RE.test(release.trim())}>저장</Button>
+        </form>
+        <div className="flex flex-wrap gap-2">
+          <input ref={configRef} type="file" className="hidden" onChange={(e) => e.target.files?.[0] && send('config', { config: e.target.files[0] })} />
+          <input ref={modulesRef} type="file" accept=".ko" multiple className="hidden"
+            onChange={(e) => e.target.files?.length && send('modules', { modules: Array.from(e.target.files) })} />
+          <Button icon={<FileCog className="size-3.5" />} loading={busy === 'config'} onClick={() => configRef.current?.click()}>config 업로드</Button>
+          <Button icon={<Cpu className="size-3.5" />} loading={busy === 'modules'} onClick={() => modulesRef.current?.click()}>모듈(.ko) 업로드</Button>
+        </div>
+        {uprev && (
+          <section>
+            <h3 className="mb-2 text-xs font-medium text-muted">Android {uprev.target_release} 판정 기준 커널</h3>
+            <ul className="space-y-1">
+              {uprev.candidates.map((c) => (
+                <li key={c.branch}>
+                  <button type="button" onClick={() => onKernelBranch(c.branch)}
+                    className={`flex w-full flex-wrap items-center gap-1.5 rounded-md px-2 py-1.5 text-left hover:bg-page ${c.branch === kernelBranch ? 'bg-accent/5 ring-1 ring-inset ring-accent/30' : ''}`}>
+                    <Mono className="mr-auto text-ink">{c.branch}</Mono>
+                    {c.is_current && <Badge>현재</Badge>}
+                    {c.branch === uprev.recommended && <Badge tone="accent">권장</Badge>}
+                    {c.eol_passed && <Badge tone="critical">EOL 경과</Badge>}
+                    {c.unsupported_from && <Badge tone="warning">{c.unsupported_from} 미지원</Badge>}
+                    {c.covers_support_until === false && <Badge tone="serious">지원 기간 미충족</Badge>}
+                    {!c.symbol_list_uploaded && <Badge>symbol list 없음</Badge>}
+                    <span className="w-full text-[11px] text-muted">EOL {c.eol}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </div>
+    </Card>
+  )
+}
+
 export default function PlatformDetailPage({ id }: { id: number }) {
   const toast = useToast()
   const platform = useAsync(() => api.platform(id), [id])
@@ -95,6 +183,7 @@ export default function PlatformDetailPage({ id }: { id: number }) {
   const [runId, setRunId] = useState<number>()
   const run = useAsync(() => (runId ? api.run(runId) : Promise.resolve(undefined)), [runId])
   const [target, setTarget] = useState('')
+  const [kernelBranch, setKernelBranch] = useState('')
   const [running, setRunning] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [filter, setFilter] = useState<'open' | 'all' | Severity>('open')
@@ -111,12 +200,19 @@ export default function PlatformDetailPage({ id }: { id: number }) {
     if (!target && targets.length) setTarget(targets.includes('17') ? '17' : targets[targets.length - 1])
   }, [targets, target])
 
+  const uprev = useAsync(() => (target ? api.kernelUprev(id, target) : Promise.resolve(undefined)), [id, target])
+  useEffect(() => {
+    // 목표 릴리스가 바뀌면 판정 기준 커널을 현재 커널로 되돌린다
+    if (p) setKernelBranch(p.kernel_branch)
+  }, [target, p?.kernel_branch])
+
   const evaluate = async () => {
     setRunning(true)
     try {
-      const r = await api.createRun(id, target)
+      const planned = kernelBranch && kernelBranch !== p?.kernel_branch ? kernelBranch : undefined
+      const r = await api.createRun(id, target, planned)
       toast({ kind: r.ready ? 'success' : 'warning', title: r.ready ? '업그레이드 가능' : `Blocker ${r.counts.blocker}건`,
-        description: r.hal_check })
+        description: [r.hal_check, r.kmi_check].filter(Boolean).join(' · ') })
       runs.reload()
       setRunId(r.id)
     } catch (e) {
@@ -162,6 +258,10 @@ export default function PlatformDetailPage({ id }: { id: number }) {
           <Select value={target} onChange={(e) => setTarget(e.target.value)} className="w-32" aria-label="목표 릴리스">
             {targets.map((t) => <option key={t} value={t}>Android {t}</option>)}
           </Select>
+          <Select value={kernelBranch} onChange={(e) => setKernelBranch(e.target.value)} className="w-52" aria-label="판정 기준 커널">
+            {(uprev.data?.candidates ?? [{ branch: p.kernel_branch }]).map((c) => (
+              <option key={c.branch} value={c.branch}>{c.branch === p.kernel_branch ? `${c.branch} (현재)` : c.branch}</option>))}
+          </Select>
           <Button variant="primary" icon={<Play className="size-3.5" />} loading={running} disabled={!target} onClick={evaluate}>판정 실행</Button>
         </>}
       />
@@ -181,6 +281,8 @@ export default function PlatformDetailPage({ id }: { id: number }) {
               ]} />
             </div>
           </Card>
+          <KernelCard platform={p} uprev={uprev.data} kernelBranch={kernelBranch} onKernelBranch={setKernelBranch}
+            onChanged={() => { platform.reload(); uprev.reload() }} />
           <Card>
             <CardHeader title="판정 이력" />
             {runs.data?.length ? (
@@ -208,7 +310,8 @@ export default function PlatformDetailPage({ id }: { id: number }) {
             <>
               <CardHeader
                 title={<span className="flex items-center gap-2">Android {run.data.current_release} → {run.data.target_release} <ReadyBadge ready={run.data.ready} /></span>}
-                description={`${dateTime(run.data.created_at)} · KB ${run.data.kb_version} · 기준일 ${run.data.as_of}`}
+                description={`${dateTime(run.data.created_at)} · KB ${run.data.kb_version} · 기준일 ${run.data.as_of}`
+                  + (run.data.kernel_branch ? ` · 커널 ${run.data.kernel_branch}` : '')}
                 actions={<Segmented value={filter} onChange={setFilter} items={[
                   { value: 'open', label: '미해결' }, { value: 'blocker', label: `Blocker ${run.data.counts.blocker}` },
                   { value: 'warning', label: `Warning ${run.data.counts.warning}` }, { value: 'all', label: '전체' },

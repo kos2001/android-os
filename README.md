@@ -29,6 +29,7 @@ Android 기기/BSP의 메이저 OS 업그레이드(예: 16 → 17)를 지원하�
 | `readiness` | `data/releases.json` 기반 규칙 판정 (커널·FCM 레벨·ION·VNDK·memfd·HAL·16KB) |
 | `vintf` | device manifest(+fragments)·framework matrix 파싱, matrix diff, manifest×matrix 검사 |
 | `remote` | HTTP Range 원격 파일 — 수 GB OTA zip 을 수백 KB 만 읽고 검사 |
+| `kernel` | GKI `uname -r`·kernel `.config`(.gz) 해석, vendor `.ko` ELF 분석, KMI symbol list 대조, 커널 uprev 후보 |
 
 ```sh
 python3 -m unittest discover -s tests -t .   # 코어만 (Python ≥ 3.10)
@@ -62,6 +63,13 @@ curl -X POST $A/platforms -H 'content-type: application/json' \
   -d '{"name":"my-bsp","soc":"my-soc","android_version":"15","kernel_branch":"android14-6.1"}'
 curl -X PUT  $A/platforms/1/manifest -F files=@vendor/etc/vintf/manifest.xml -F files=@fragment.xml
 curl -X POST $A/platforms/1/readiness-runs -H 'content-type: application/json' -d '{"target_release":"17"}'
+# 커널: symbol list 등록(AOSP) → uname·config·vendor 모듈 업로드 → uprev 후 기준 판정
+.venv/bin/python scripts/import_symbol_lists.py --branch android17-6.18
+curl -X PUT $A/platforms/1/kernel -F kernel_release="$(adb shell uname -r)" -F config=@config.gz \
+  -F modules=@vendor_dlkm/lib/modules/foo.ko
+curl "$A/platforms/1/kernel/uprev?target_release=17"
+curl -X POST $A/platforms/1/readiness-runs -H 'content-type: application/json' \
+  -d '{"target_release":"17","target_kernel_branch":"android17-6.18"}'
 curl -X POST $A/packages/inspect -H 'content-type: application/json' -d '{"url":"https://.../ota.zip"}'
 ```
 

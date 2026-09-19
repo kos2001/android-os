@@ -21,6 +21,60 @@ export interface Platform {
   support_until: string | null
   created_at: string
   manifest: { target_level: string | null; hal_count: number; uploaded_at: string } | null
+  kernel: { kernel_release: string | null; kmi_generation: number | null; has_config: boolean; module_count: number;
+    uploaded_at: string } | null
+}
+
+export interface KernelModuleSummary {
+  filename: string
+  name: string
+  vermagic: string | null
+  license: string | null
+  depends: string[]
+  undefined_count: number
+  export_count: number
+}
+
+export interface KernelView {
+  kernel_release: string | null
+  kmi_generation: number | null
+  config: { option_count: number; hints: KernelConfigHints } | null
+  modules: KernelModuleSummary[]
+  uploaded_at: string
+}
+
+export interface KernelConfigHints {
+  uses_ion: boolean
+  supports_16kb: boolean
+  page_size_kb: number | null
+  dmabuf_heaps: boolean
+  modversions: boolean
+}
+
+export interface UprevCandidate {
+  branch: string
+  eol: string
+  is_current: boolean
+  eol_passed: boolean
+  covers_support_until: boolean | null
+  unsupported_from: string | null
+  symbol_list_uploaded: boolean
+}
+
+export interface UprevReport {
+  current_branch: string
+  target_release: string
+  support_until: string | null
+  candidates: UprevCandidate[]
+  recommended: string | null
+}
+
+export interface SymbolListInfo {
+  branch: string
+  symbol_count: number
+  files: string[]
+  source: string | null
+  uploaded_at: string
 }
 
 export interface Finding {
@@ -48,8 +102,10 @@ export interface ReadinessRun {
   counts: Record<Severity, number>
   as_of: string
   current_release: string
+  kernel_branch: string | null
   findings: Finding[]
   hal_check?: string
+  kmi_check?: string
 }
 
 export interface RunSummary {
@@ -337,9 +393,22 @@ export const api = {
       'PUT', `/admin/v1/platforms/${id}/manifest`, form)
   },
   runs: (id: number) => get<RunSummary[]>(`/admin/v1/platforms/${id}/readiness-runs`),
-  createRun: (id: number, target_release: string) =>
-    post<ReadinessRun>(`/admin/v1/platforms/${id}/readiness-runs`, { target_release }),
+  createRun: (id: number, target_release: string, target_kernel_branch?: string) =>
+    post<ReadinessRun>(`/admin/v1/platforms/${id}/readiness-runs`,
+      target_kernel_branch ? { target_release, target_kernel_branch } : { target_release }),
   run: (runId: number) => get<ReadinessRun>(`/admin/v1/readiness-runs/${runId}`),
+  kernel: (id: number) => get<KernelView>(`/admin/v1/platforms/${id}/kernel`),
+  uploadKernel: (id: number, parts: { kernel_release?: string; config?: File; modules?: File[] }) => {
+    const form = new FormData()
+    if (parts.kernel_release) form.append('kernel_release', parts.kernel_release)
+    if (parts.config) form.append('config', parts.config)
+    parts.modules?.forEach((f) => form.append('modules', f))
+    return request<KernelView & { platform: Platform; config_hints: KernelConfigHints | null }>(
+      'PUT', `/admin/v1/platforms/${id}/kernel`, form)
+  },
+  kernelUprev: (id: number, target_release: string) =>
+    get<UprevReport>(`/admin/v1/platforms/${id}/kernel/uprev?target_release=${encodeURIComponent(target_release)}`),
+  symbolLists: () => get<SymbolListInfo[]>('/admin/v1/kernel/symbol-lists'),
   patchWorkItem: (id: number, body: Partial<Pick<Finding, 'status' | 'owner' | 'waive_reason' | 'external_ref'>>) =>
     request<unknown>('PATCH', `/admin/v1/work-items/${id}`, body),
 
