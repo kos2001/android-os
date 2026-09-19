@@ -2,6 +2,7 @@ import { Check, Copy, Loader2 } from 'lucide-react'
 import { forwardRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode,
   type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
 import { tr } from '../../lib/i18n'
+import { HUE, hueOf, usePageHue, type Hue } from '../../lib/palette'
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ')
@@ -47,11 +48,18 @@ export function Card({ className, children }: { className?: string; children: Re
   return <section className={cx('rounded-lg border border-line bg-surface', className)}>{children}</section>
 }
 
-export function CardHeader({ title, description, actions }: { title: ReactNode; description?: ReactNode; actions?: ReactNode }) {
+/** 제목 앞 색 점: hue 를 주지 않으면 제목 문자열로 항상 같은 색을 고른다 (장식용). */
+export function CardHeader({ title, description, actions, hue }: {
+  title: ReactNode; description?: ReactNode; actions?: ReactNode; hue?: Hue
+}) {
+  const color = hue ?? (typeof title === 'string' ? hueOf(title) : undefined)
   return (
     <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
       <div className="min-w-0">
-        <h2 className="text-[13px] font-semibold text-ink">{title}</h2>
+        <h2 className="flex items-center gap-2 text-[13px] font-semibold text-ink">
+          {color && <span aria-hidden className={cx('size-2 shrink-0 rounded-full', HUE[color].dot)} />}
+          {title}
+        </h2>
         {description && <p className="mt-0.5 text-xs text-muted">{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
@@ -129,9 +137,10 @@ export function Spinner({ className }: { className?: string }) {
 export function EmptyState({ icon, title, description, action }: {
   icon: ReactNode; title: string; description?: ReactNode; action?: ReactNode
 }) {
+  const hue = HUE[usePageHue()]
   return (
     <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
-      <div className="mb-3 flex size-10 items-center justify-center rounded-full border border-line bg-raised text-muted">
+      <div className={cx('mb-3 flex size-11 items-center justify-center rounded-full ring-1 ring-inset', hue.soft, hue.text, hue.ring)}>
         {icon}
       </div>
       <p className="text-[13px] font-semibold text-ink">{title}</p>

@@ -7,23 +7,9 @@ import { api } from '../lib/api'
 import { num } from '../lib/format'
 import { navigate, useAsync } from '../lib/hooks'
 import { useT } from '../lib/i18n'
+import { HUE, type Hue } from '../lib/palette'
 
-// 소개 페이지는 섹션·단계마다 다른 색 계열을 쓴다. 각 색은 라이트(50 배경 + 700 글자)와
-// 다크(500/10 배경 + 300 글자) 조합으로 본문 대비를 유지한다. 색만으로 뜻을 전하지 않도록 항상 아이콘·라벨을 함께 둔다.
-type Hue = 'sky' | 'violet' | 'emerald' | 'amber' | 'rose' | 'teal' | 'fuchsia' | 'indigo' | 'orange' | 'lime'
-
-const HUE: Record<Hue, { soft: string; text: string; ring: string; solid: string; bar: string }> = {
-  sky: { soft: 'bg-sky-50 dark:bg-sky-500/10', text: 'text-sky-700 dark:text-sky-300', ring: 'ring-sky-200 dark:ring-sky-500/30', solid: 'bg-sky-600', bar: 'from-sky-400 to-sky-600' },
-  violet: { soft: 'bg-violet-50 dark:bg-violet-500/10', text: 'text-violet-700 dark:text-violet-300', ring: 'ring-violet-200 dark:ring-violet-500/30', solid: 'bg-violet-600', bar: 'from-violet-400 to-violet-600' },
-  emerald: { soft: 'bg-emerald-50 dark:bg-emerald-500/10', text: 'text-emerald-700 dark:text-emerald-300', ring: 'ring-emerald-200 dark:ring-emerald-500/30', solid: 'bg-emerald-600', bar: 'from-emerald-400 to-emerald-600' },
-  amber: { soft: 'bg-amber-50 dark:bg-amber-500/10', text: 'text-amber-800 dark:text-amber-300', ring: 'ring-amber-200 dark:ring-amber-500/30', solid: 'bg-amber-500', bar: 'from-amber-300 to-amber-500' },
-  rose: { soft: 'bg-rose-50 dark:bg-rose-500/10', text: 'text-rose-700 dark:text-rose-300', ring: 'ring-rose-200 dark:ring-rose-500/30', solid: 'bg-rose-600', bar: 'from-rose-400 to-rose-600' },
-  teal: { soft: 'bg-teal-50 dark:bg-teal-500/10', text: 'text-teal-700 dark:text-teal-300', ring: 'ring-teal-200 dark:ring-teal-500/30', solid: 'bg-teal-600', bar: 'from-teal-400 to-teal-600' },
-  fuchsia: { soft: 'bg-fuchsia-50 dark:bg-fuchsia-500/10', text: 'text-fuchsia-700 dark:text-fuchsia-300', ring: 'ring-fuchsia-200 dark:ring-fuchsia-500/30', solid: 'bg-fuchsia-600', bar: 'from-fuchsia-400 to-fuchsia-600' },
-  indigo: { soft: 'bg-indigo-50 dark:bg-indigo-500/10', text: 'text-indigo-700 dark:text-indigo-300', ring: 'ring-indigo-200 dark:ring-indigo-500/30', solid: 'bg-indigo-600', bar: 'from-indigo-400 to-indigo-600' },
-  orange: { soft: 'bg-orange-50 dark:bg-orange-500/10', text: 'text-orange-700 dark:text-orange-300', ring: 'ring-orange-200 dark:ring-orange-500/30', solid: 'bg-orange-600', bar: 'from-orange-400 to-orange-600' },
-  lime: { soft: 'bg-lime-50 dark:bg-lime-500/10', text: 'text-lime-800 dark:text-lime-300', ring: 'ring-lime-200 dark:ring-lime-500/30', solid: 'bg-lime-600', bar: 'from-lime-400 to-lime-600' },
-}
+// 소개 페이지는 섹션·단계마다 다른 색 계열(lib/palette.ts)을 쓴다. 색만으로 뜻을 전하지 않도록 아이콘·라벨을 함께 둔다.
 
 function IconChip({ hue, children, size = 'md' }: { hue: Hue; children: ReactNode; size?: 'md' | 'lg' }) {
   return (
