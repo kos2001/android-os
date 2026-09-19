@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .kernel import (ABI_MONITOR_SOURCE, KernelModule, branch_key, check_modules, recommended_uprev,
                      uprev_candidates)
+from .drivers import module_uses_ion
 from .vintf import Manifest, Matrix, check_manifest
 
 DATA = Path(__file__).resolve().parent / "data" / "releases.json"
@@ -184,13 +185,18 @@ def _rule_kmi(modules: list[KernelModule], kmi_symbols: set[str], branch: str) -
     return out
 
 
-def _rule_vendor(p: PlatformProfile, target: dict, kb: dict) -> list[Finding]:
+def _rule_vendor(p: PlatformProfile, target: dict, kb: dict,
+                 modules: list[KernelModule] | None = None) -> list[Finding]:
     out: list[Finding] = []
-    if p.uses_ion and target.get("ion_supported") is False:
+    ion_drivers = sorted(m.name for m in modules or [] if module_uses_ion(m))
+    if (p.uses_ion or ion_drivers) and target.get("ion_supported") is False:
+        base = ("ION 지원 커널이 모두 2025-12 EOL. DMA-BUF heaps 로 이전 필요.",
+                "All ION-capable kernels reached EOL in 2025-12. Migrate to DMA-BUF heaps.")
+        if ion_drivers:
+            names = ", ".join(ion_drivers)
+            base = _join(base, (f" ION API 를 쓰는 드라이버: {names}.", f" Drivers using ION APIs: {names}."))
         out.append(Finding("ION_REMOVED", "blocker", ("ION 사용 — 지원 종료", "Uses ION — no longer supported"),
-                           ("ION 지원 커널이 모두 2025-12 EOL. DMA-BUF heaps 로 이전 필요.",
-                            "All ION-capable kernels reached EOL in 2025-12. Migrate to DMA-BUF heaps."),
-                           (kb["ion_source"],)))
+                           base, (kb["ion_source"],)))
     if p.uses_vndk and target.get("vndk_supported") is False:
         out.append(Finding("VNDK_DEPRECATED", "blocker",
                            ("VNDK 의존 — Android 15+ 에서 폐지", "Depends on VNDK — removed in Android 15+"),
@@ -291,7 +297,7 @@ def evaluate(profile: PlatformProfile, target_release: str, as_of: date,
                               "list and ABI checks."),
                              tuple(kb["kernel_sources"])))
     findings = (uprev + _rule_kernel(kernel_profile, target, kb, as_of) + _rule_fcm(profile, target)
-                + _rule_vendor(profile, target, kb))
+                + _rule_vendor(profile, target, kb, kernel_modules))
     if manifest is not None and target_matrix is not None:
         findings += _rule_manifest(manifest, target_matrix)
     if kernel_modules and kmi_symbols is not None:

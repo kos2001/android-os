@@ -8,6 +8,7 @@ import { Badge, ReadyBadge, SeverityBadge, WORK_STATUS_LABEL } from '../componen
 import { api, ApiError, type Finding, type KernelConfigHints, type Platform, type Severity, type UprevReport, type WorkStatus } from '../lib/api'
 import { dateTime, relativeTime } from '../lib/format'
 import { useAsync } from '../lib/hooks'
+import PlatformDrivers from './PlatformDrivers'
 import { localized, useLang, useT } from '../lib/i18n'
 
 function FindingDrawer({ finding, onClose, onSaved }: { finding: Finding | null; onClose: () => void; onSaved: () => void }) {
@@ -362,6 +363,8 @@ export default function PlatformDetailPage({ id }: { id: number }) {
           )}
         </Card>
       </div>
+      <PlatformDrivers platformId={id} kernelBranch={kernelBranch}
+        reloadKey={`${p.kernel?.uploaded_at ?? ''}|${p.manifest?.uploaded_at ?? ''}`} />
       <FindingDrawer finding={selected} onClose={() => setSelected(null)} onSaved={run.reload} />
     </>
   )
