@@ -2,6 +2,7 @@ import { AlertTriangle, CheckCircle2, Info, X, XCircle } from 'lucide-react'
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Button, cx, Field, Textarea } from './primitives'
+import { tr } from '../../lib/i18n'
 
 function useEscape(open: boolean, onClose: () => void) {
   useEffect(() => {
@@ -27,7 +28,7 @@ export function Dialog({ open, onClose, title, description, children, footer, wi
             <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
             {description && <p className="mt-1 text-xs text-muted">{description}</p>}
           </div>
-          <Button variant="ghost" size="sm" aria-label="닫기" onClick={onClose} icon={<X className="size-4" />} />
+          <Button variant="ghost" size="sm" aria-label={tr('닫기', 'Close')} onClick={onClose} icon={<X className="size-4" />} />
         </header>
         {children && <div className="px-5 pb-4">{children}</div>}
         {footer && <footer className="flex justify-end gap-2 border-t border-line bg-page/60 px-5 py-3 rounded-b-xl">{footer}</footer>}
@@ -53,7 +54,7 @@ export function Drawer({ open, onClose, title, subtitle, children, actions }: {
           </div>
           <div className="flex items-center gap-1">
             {actions}
-            <Button variant="ghost" size="sm" aria-label="닫기" onClick={onClose} icon={<X className="size-4" />} />
+            <Button variant="ghost" size="sm" aria-label={tr('닫기', 'Close')} onClick={onClose} icon={<X className="size-4" />} />
           </div>
         </header>
         <div className="scrollbar-thin flex-1 overflow-y-auto px-5 py-4">{children}</div>
@@ -87,13 +88,13 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, description, co
       title={title}
       description={description}
       footer={<>
-        <Button onClick={onClose}>취소</Button>
+        <Button onClick={onClose}>{tr('취소', 'Cancel')}</Button>
         <Button variant={danger ? 'danger' : 'primary'} loading={busy}
           disabled={requireReason && !reason.trim()} onClick={confirm}>{confirmLabel}</Button>
       </>}
     >
       {requireReason && (
-        <Field label="사유" hint="감사 로그에 기록됩니다">
+        <Field label={tr('사유', 'Reason')} hint={tr('감사 로그에 기록됩니다', 'Recorded in the audit log')}>
           <Textarea autoFocus rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />
         </Field>
       )}

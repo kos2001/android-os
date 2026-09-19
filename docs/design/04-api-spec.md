@@ -113,7 +113,7 @@
 | GET | `/admin/v1/platforms/{id}/kernel/uprev?target_release=17` | 전체 | 목표 릴리스 지원 브랜치 중 현재 이상 후보(EOL·QPR 제외·지원 기간 충족·symbol list 등록 여부)와 `recommended` |
 | PUT | `/admin/v1/kernel/symbol-lists/{branch}` | engineer | KMI symbol list 파일들(multipart `files`, `source`) → 합집합 저장. 빈 vendor 파일은 허용, 전체가 비면 422 |
 | GET | `/admin/v1/kernel/symbol-lists` | 전체 | 등록된 브랜치·심볼 수·파일·출처 |
-| GET | `/admin/v1/readiness-runs/{id}` | 전체 | 결과·KB 버전 |
+| GET | `/admin/v1/readiness-runs/{id}` | 전체 | 결과·KB 버전. finding 은 `title`/`detail`(한국어)와 `title_en`/`detail_en`(영어, 도입 전 판정은 null) |
 | PATCH | `/admin/v1/work-items/{id}` | engineer | 상태/담당/면제 사유 |
 | POST | `/admin/v1/builds` | pipeline | 빌드 등록(fingerprint, timestamp, spl, sdk) |
 | POST | `/admin/v1/packages` | pipeline | `{"object_key": "staging/…zip"}` 또는 multipart → 202 + ingest 작업 |

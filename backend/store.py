@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS finding (
     severity TEXT NOT NULL CHECK (severity IN ('blocker', 'warning', 'info')),
     title TEXT NOT NULL,
     detail TEXT NOT NULL,
+    title_en TEXT,                    -- NULL: 영어 문구 도입 전 판정
+    detail_en TEXT,
     sources TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS work_item (
@@ -117,7 +119,16 @@ class Store:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.executescript(SCHEMA)
+        self._migrate()
         self._lock = threading.RLock()
+
+    def _migrate(self) -> None:
+        """CREATE TABLE IF NOT EXISTS 는 기존 테이블에 컬럼을 추가하지 않으므로 여기서 보강한다."""
+        columns = {r["name"] for r in self._conn.execute("PRAGMA table_info(finding)")}
+        for column in ("title_en", "detail_en"):
+            if column not in columns:
+                self._conn.execute(f"ALTER TABLE finding ADD COLUMN {column} TEXT")
+        self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()
@@ -283,10 +294,10 @@ class Store:
                                 json.dumps(summary, ensure_ascii=False), actor, now()))
             run_id = cur.lastrowid
             for f in summary["findings"]:
-                fid = conn.execute("INSERT INTO finding (run_id, rule_id, severity, title, detail, sources) "
-                                   "VALUES (?, ?, ?, ?, ?, ?)",
-                                   (run_id, f["rule_id"], f["severity"], f["title"], f["detail"],
-                                    json.dumps(f["sources"]))).lastrowid
+                fid = conn.execute("INSERT INTO finding (run_id, rule_id, severity, title, detail, title_en, detail_en, "
+                                   "sources) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                   (run_id, f["rule_id"], f["severity"], f["title"], f["detail"], f.get("title_en"),
+                                    f.get("detail_en"), json.dumps(f["sources"]))).lastrowid
                 if f["severity"] != "info":
                     conn.execute("INSERT INTO work_item (finding_id, updated_at) VALUES (?, ?)", (fid, now()))
             self._audit(conn, actor, "create", "readiness_run", run_id,
@@ -298,7 +309,7 @@ class Store:
         run = self._one("SELECT * FROM readiness_run WHERE id = ?", (run_id,))
         summary = json.loads(run.pop("summary"))
         findings = self._all(
-            "SELECT f.id, f.rule_id, f.severity, f.title, f.detail, f.sources, w.id AS work_item_id, "
+            "SELECT f.id, f.rule_id, f.severity, f.title, f.detail, f.title_en, f.detail_en, f.sources, w.id AS work_item_id, "
             "w.status, w.owner, w.waive_reason, w.external_ref FROM finding f "
             "LEFT JOIN work_item w ON w.finding_id = f.id WHERE f.run_id = ? ORDER BY f.id", (run_id,))
         for f in findings:

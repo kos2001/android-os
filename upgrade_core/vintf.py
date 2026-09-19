@@ -237,7 +237,8 @@ def diff_matrices(old: Matrix, new: Matrix) -> MatrixDiff:
 class CompatIssue:
     kind: str  # NOT_IN_MATRIX | VERSION_UNSUPPORTED | INSTANCE_NOT_ALLOWED
     hal: str
-    detail: str
+    detail: str  # 한국어
+    detail_en: str
 
 
 def check_manifest(manifest: Manifest, matrix: Matrix) -> list[CompatIssue]:
@@ -248,15 +249,18 @@ def check_manifest(manifest: Manifest, matrix: Matrix) -> list[CompatIssue]:
         mhal = matrix.hals.get((inst.format, inst.name))
         if mhal is None:
             issues.append(CompatIssue("NOT_IN_MATRIX", inst.fqname,
-                                      f"framework matrix level {matrix.level} 에 {inst.format} {inst.name} 없음"))
+                                      f"framework matrix level {matrix.level} 에 {inst.format} {inst.name} 없음",
+                                      f"{inst.format} {inst.name} is not in framework matrix level {matrix.level}"))
             continue
         if not any(r.supported_by(inst.version) for r in mhal.versions):
             allowed = ", ".join(map(str, mhal.versions))
             issues.append(CompatIssue("VERSION_UNSUPPORTED", inst.fqname,
-                                      f"버전 {inst.version} 은 level {matrix.level} 허용 범위({allowed}) 미달/불일치"))
+                                      f"버전 {inst.version} 은 level {matrix.level} 허용 범위({allowed}) 미달/불일치",
+                                      f"Version {inst.version} is outside the level {matrix.level} range ({allowed})"))
             continue
         iface = mhal.interfaces.get(inst.interface)
         if mhal.interfaces and (iface is None or not iface.allows(inst.instance)):
             issues.append(CompatIssue("INSTANCE_NOT_ALLOWED", inst.fqname,
-                                      f"level {matrix.level} 에 {inst.interface}/{inst.instance} 선언 없음"))
+                                      f"level {matrix.level} 에 {inst.interface}/{inst.instance} 선언 없음",
+                                      f"{inst.interface}/{inst.instance} is not declared in level {matrix.level}"))
     return issues

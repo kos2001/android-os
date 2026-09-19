@@ -8,17 +8,21 @@ import { ASSIGNMENT_LABEL, Badge, ChannelBadge, RolloutBadge } from '../componen
 import { api, type AssignmentState, type HaltEvaluation, type Rollout } from '../lib/api'
 import { dateTime, num, pct, relativeTime, shortFingerprint } from '../lib/format'
 import { useAsync } from '../lib/hooks'
+import { useT } from '../lib/i18n'
 
 type Action = 'start' | 'promote' | 'pause' | 'resume' | 'halt' | 'complete'
 
-const ACTION: Record<Action, { label: string; icon: ReactNode; confirm: string; description: string; danger?: boolean; reason?: boolean }> = {
-  start: { label: '시작', icon: <Play className="size-3.5" />, confirm: '롤아웃을 시작할까요?', description: '1단계 비율의 기기에 즉시 제공됩니다.' },
-  promote: { label: '다음 단계', icon: <SkipForward className="size-3.5" />, confirm: '다음 단계로 승격할까요?', description: '비율을 올리면 기존 대상은 유지되고 새 기기가 추가됩니다. 최소 유지 시간이 지나야 합니다.' },
-  pause: { label: '일시정지', icon: <Pause className="size-3.5" />, confirm: '일시정지할까요?', description: '신규 제공이 멈춥니다. 다운로드·설치 중인 기기는 계속 진행합니다.' },
-  resume: { label: '재개', icon: <Play className="size-3.5" />, confirm: '재개할까요?', description: '현재 단계 비율로 다시 제공합니다.' },
-  halt: { label: '중단', icon: <OctagonX className="size-3.5" />, confirm: '롤아웃을 중단할까요?', description: '중단된 롤아웃은 재개할 수 없습니다. 이미 새 빌드로 부팅한 기기는 되돌릴 수 없으며, 수정 빌드로 새 롤아웃을 만들어야 합니다.', danger: true, reason: true },
-  complete: { label: '완료', icon: <CircleCheckBig className="size-3.5" />, confirm: '롤아웃을 완료 처리할까요?', description: '더 이상 기기에 제공하지 않습니다.' },
-}
+type Translate = (ko: string, en: string) => string
+type ActionMeta = { label: string; icon: ReactNode; confirm: string; description: string; danger?: boolean; reason?: boolean }
+
+const actionMeta = (t: Translate): Record<Action, ActionMeta> => ({
+  start: { label: t('시작', 'Start'), icon: <Play className="size-3.5" />, confirm: t('롤아웃을 시작할까요?', 'Start this rollout?'), description: t('1단계 비율의 기기에 즉시 제공됩니다.', 'The update is offered right away to the stage 1 share of devices.') },
+  promote: { label: t('다음 단계', 'Next stage'), icon: <SkipForward className="size-3.5" />, confirm: t('다음 단계로 승격할까요?', 'Promote to the next stage?'), description: t('비율을 올리면 기존 대상은 유지되고 새 기기가 추가됩니다. 최소 유지 시간이 지나야 합니다.', 'Raising the percentage keeps existing targets and adds new devices. The minimum soak time must have passed.') },
+  pause: { label: t('일시정지', 'Pause'), icon: <Pause className="size-3.5" />, confirm: t('일시정지할까요?', 'Pause this rollout?'), description: t('신규 제공이 멈춥니다. 다운로드·설치 중인 기기는 계속 진행합니다.', 'New offers stop. Devices already downloading or installing continue.') },
+  resume: { label: t('재개', 'Resume'), icon: <Play className="size-3.5" />, confirm: t('재개할까요?', 'Resume this rollout?'), description: t('현재 단계 비율로 다시 제공합니다.', 'Offers resume at the current stage percentage.') },
+  halt: { label: t('중단', 'Halt'), icon: <OctagonX className="size-3.5" />, confirm: t('롤아웃을 중단할까요?', 'Halt this rollout?'), description: t('중단된 롤아웃은 재개할 수 없습니다. 이미 새 빌드로 부팅한 기기는 되돌릴 수 없으며, 수정 빌드로 새 롤아웃을 만들어야 합니다.', 'A halted rollout cannot be resumed. Devices already booted into the new build cannot be reverted; create a new rollout with a fixed build.'), danger: true, reason: true },
+  complete: { label: t('완료', 'Complete'), icon: <CircleCheckBig className="size-3.5" />, confirm: t('롤아웃을 완료 처리할까요?', 'Mark this rollout as complete?'), description: t('더 이상 기기에 제공하지 않습니다.', 'The update will no longer be offered to devices.') },
+})
 
 const AVAILABLE: Record<Rollout['state'], Action[]> = {
   draft: ['start'], active: ['promote', 'pause', 'halt', 'complete'], paused: ['resume', 'halt', 'complete'],
@@ -31,6 +35,7 @@ const ASSIGNMENT_COLORS: Record<AssignmentState, string> = {
 }
 
 export default function RolloutDetailPage({ id }: { id: number }) {
+  const t = useT()
   const toast = useToast()
   const [hours, setHours] = useState<'24' | '72' | '168'>('72')
   const rollout = useAsync(() => api.rollout(id), [id], 15_000)
@@ -47,6 +52,7 @@ export default function RolloutDetailPage({ id }: { id: number }) {
   if (rollout.error) return <ErrorBanner error={rollout.error} onRetry={rollout.reload} />
   if (!r) return <div className="space-y-4"><Skeleton className="h-12 w-1/3" /><Skeleton className="h-72" /></div>
 
+  const ACTION = actionMeta(t)
   const w = m?.window
   const errorRate = w && w.attempted ? Object.values(w.failed_by_code).reduce((a, b) => a + b, 0) / w.attempted : null
   const fallbackRate = w && w.installed ? w.boot_fallback / w.installed : null
@@ -60,7 +66,7 @@ export default function RolloutDetailPage({ id }: { id: number }) {
     try {
       setEvaluation(await api.evaluateHalt(id, false))
     } catch (e) {
-      toast({ kind: 'error', title: '평가 실패', description: (e as Error).message })
+      toast({ kind: 'error', title: t('평가 실패', 'Evaluation failed'), description: (e as Error).message })
     } finally {
       setEvaluating(false)
     }
@@ -74,7 +80,7 @@ export default function RolloutDetailPage({ id }: { id: number }) {
         meta={<><RolloutBadge state={r.state} /><ChannelBadge channel={r.channel} /><Badge>{r.device}</Badge>
           <span className="text-xs text-muted">{r.created_by} · {relativeTime(r.created_at)}</span></>}
         actions={<>
-          <Button variant="ghost" icon={<RefreshCw className="size-3.5" />} onClick={reload}>새로고침</Button>
+          <Button variant="ghost" icon={<RefreshCw className="size-3.5" />} onClick={reload}>{t('새로고침', 'Refresh')}</Button>
           {AVAILABLE[r.state].map((a) => (
             <Button key={a} variant={a === 'halt' ? 'danger' : a === 'start' || a === 'promote' ? 'primary' : 'secondary'}
               icon={ACTION[a].icon} onClick={() => setAction(a)}>{ACTION[a].label}</Button>
@@ -85,17 +91,20 @@ export default function RolloutDetailPage({ id }: { id: number }) {
       {r.state === 'halted' && r.halt_reason && (
         <div role="alert" className="mb-4 flex gap-2.5 rounded-lg border border-critical/30 bg-critical/5 px-4 py-3">
           <OctagonX className="mt-0.5 size-4 shrink-0 text-critical" />
-          <div className="text-[13px]"><p className="font-semibold text-ink">중단됨</p><p className="mt-0.5 text-ink-2">{r.halt_reason}</p></div>
+          <div className="text-[13px]"><p className="font-semibold text-ink">{t('중단됨', 'Halted')}</p><p className="mt-0.5 text-ink-2">{r.halt_reason}</p></div>
         </div>
       )}
 
       <Card className="mb-4">
         <div className="p-4">
           <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-[13px] font-semibold text-ink">배포 단계</p>
+            <p className="text-[13px] font-semibold text-ink">{t('배포 단계', 'Stages')}</p>
             <p className="text-xs text-muted">
-              현재 <b className="tabular text-ink">{r.current_percent}%</b>
-              {nextStage && soakUntil && ` · 다음 단계(${nextStage.percent}%) 승격 가능: ${soakUntil <= new Date() ? '지금' : dateTime(soakUntil.toISOString())}`}
+              {t('현재', 'Current')} <b className="tabular text-ink">{r.current_percent}%</b>
+              {nextStage && soakUntil && t(
+                ` · 다음 단계(${nextStage.percent}%) 승격 가능: ${soakUntil <= new Date() ? '지금' : dateTime(soakUntil.toISOString())}`,
+                ` · Next stage (${nextStage.percent}%) can be promoted: ${soakUntil <= new Date() ? 'now' : dateTime(soakUntil.toISOString())}`,
+              )}
             </p>
           </div>
           <ol className="grid gap-2" style={{ gridTemplateColumns: `repeat(${r.stages.length}, minmax(0, 1fr))` }}>
@@ -105,13 +114,13 @@ export default function RolloutDetailPage({ id }: { id: number }) {
               return (
                 <li key={s.seq} className={`rounded-md border px-3 py-2.5 ${current ? 'border-accent bg-accent/5' : 'border-line'}`}>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted">{s.seq}단계</span>
+                    <span className="text-xs text-muted">{t(`${s.seq}단계`, `Stage ${s.seq}`)}</span>
                     {done && <CheckCircle2 className="size-3.5 text-good" />}
                     {current && <Activity className="size-3.5 text-accent-ink" />}
                   </div>
                   <p className="tabular mt-1 text-lg font-semibold text-ink">{s.percent}%</p>
                   <p className="text-[11px] text-muted">
-                    {s.promoted_at ? `${relativeTime(s.promoted_at)} · ${s.promoted_by}` : `최소 ${s.min_soak_hours}시간 유지`}
+                    {s.promoted_at ? `${relativeTime(s.promoted_at)} · ${s.promoted_by}` : t(`최소 ${s.min_soak_hours}시간 유지`, `Soak at least ${s.min_soak_hours}h`)}
                   </p>
                 </li>
               )
@@ -121,13 +130,13 @@ export default function RolloutDetailPage({ id }: { id: number }) {
       </Card>
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile icon={<Gauge className="size-3.5" />} label="설치 시도" value={w ? num(w.attempted) : '—'} sub="attempt 단위" />
-        <StatTile icon={<ShieldCheck className="size-3.5" />} label="부팅 판정" value={w ? num(w.installed) : '—'}
-          sub={w?.attempted ? `시도 대비 ${pct(w.installed / w.attempted)}` : undefined} />
-        <StatTile icon={<OctagonX className="size-3.5" />} label="설치 실패율" value={pct(errorRate)}
-          sub={r.halt_rules.max_error_rate != null ? `중단 기준 ${pct(r.halt_rules.max_error_rate)}` : '기준 없음'} />
-        <StatTile icon={<Undo2 className="size-3.5" />} label="부팅 폴백률" value={pct(fallbackRate)}
-          sub={r.halt_rules.max_boot_fallback_rate != null ? `중단 기준 ${pct(r.halt_rules.max_boot_fallback_rate)}` : '기준 없음'} />
+        <StatTile icon={<Gauge className="size-3.5" />} label={t('설치 시도', 'Install attempts')} value={w ? num(w.attempted) : '—'} sub={t('attempt 단위', 'Per attempt')} />
+        <StatTile icon={<ShieldCheck className="size-3.5" />} label={t('부팅 판정', 'Boot verdicts')} value={w ? num(w.installed) : '—'}
+          sub={w?.attempted ? t(`시도 대비 ${pct(w.installed / w.attempted)}`, `${pct(w.installed / w.attempted)} of attempts`) : undefined} />
+        <StatTile icon={<OctagonX className="size-3.5" />} label={t('설치 실패율', 'Install failure rate')} value={pct(errorRate)}
+          sub={r.halt_rules.max_error_rate != null ? t(`중단 기준 ${pct(r.halt_rules.max_error_rate)}`, `Halt threshold ${pct(r.halt_rules.max_error_rate)}`) : t('기준 없음', 'No threshold')} />
+        <StatTile icon={<Undo2 className="size-3.5" />} label={t('부팅 폴백률', 'Boot fallback rate')} value={pct(fallbackRate)}
+          sub={r.halt_rules.max_boot_fallback_rate != null ? t(`중단 기준 ${pct(r.halt_rules.max_boot_fallback_rate)}`, `Halt threshold ${pct(r.halt_rules.max_boot_fallback_rate)}`) : t('기준 없음', 'No threshold')} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -135,26 +144,26 @@ export default function RolloutDetailPage({ id }: { id: number }) {
           <div className="p-4">
             {series.data ? (
               <LineChart
-                title="설치 진행 추이"
-                subtitle="시간당 이벤트 수 (서버 수신 기준)"
+                title={t('설치 진행 추이', 'Install progress')}
+                subtitle={t('시간당 이벤트 수 (서버 수신 기준)', 'Events per hour (by server receipt time)')}
                 data={series.data}
                 x="hour"
-                formatX={(v) => { const d = new Date(v); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}시` }}
+                formatX={(v) => { const d = new Date(v); const hh = String(d.getHours()).padStart(2, '0'); return t(`${d.getMonth() + 1}/${d.getDate()} ${hh}시`, `${d.getMonth() + 1}/${d.getDate()} ${hh}:00`) }}
                 series={[
-                  { key: 'download_started', label: '다운로드 시작', color: 'var(--series-1)' },
-                  { key: 'updated_need_reboot', label: '설치 완료', color: 'var(--series-2)' },
-                  { key: 'boot_success', label: '부팅 성공', color: 'var(--series-3)' },
+                  { key: 'download_started', label: t('다운로드 시작', 'Download started'), color: 'var(--series-1)' },
+                  { key: 'updated_need_reboot', label: t('설치 완료', 'Installed'), color: 'var(--series-2)' },
+                  { key: 'boot_success', label: t('부팅 성공', 'Boot success'), color: 'var(--series-3)' },
                 ]}
               />
             ) : <Skeleton className="h-64" />}
             <div className="mt-2 flex justify-end">
               <Segmented value={hours} onChange={setHours} items={[
-                { value: '24', label: '24시간' }, { value: '72', label: '3일' }, { value: '168', label: '7일' }]} />
+                { value: '24', label: t('24시간', '24h') }, { value: '72', label: t('3일', '3d') }, { value: '168', label: t('7일', '7d') }]} />
             </div>
           </div>
         </Card>
         <Card>
-          <CardHeader title="기기 상태" description="assignment 현재 상태" />
+          <CardHeader title={t('기기 상태', 'Device status')} description={t('assignment 현재 상태', 'Current assignment state')} />
           <div className="p-4">
             {m ? (
               <SegmentBar segments={(Object.keys(ASSIGNMENT_LABEL) as AssignmentState[]).map((s) => ({
@@ -166,44 +175,44 @@ export default function RolloutDetailPage({ id }: { id: number }) {
         <Card className="lg:col-span-2">
           <div className="p-4">
             <BarList
-              title="설치 실패 오류 코드"
-              subtitle="update_engine ErrorCode · 시도별 마지막 실패 기준"
-              valueLabel="기기 수"
+              title={t('설치 실패 오류 코드', 'Install failure error codes')}
+              subtitle={t('update_engine ErrorCode · 시도별 마지막 실패 기준', 'update_engine ErrorCode · last failure per attempt')}
+              valueLabel={t('기기 수', 'Devices')}
               items={(m?.errors ?? []).map((e) => ({
                 key: String(e.code), value: e.devices, hint: `ErrorCode ${e.code}`,
                 label: <span><Mono className="text-muted">{e.code}</Mono> {e.name}</span>,
               }))}
-              empty={<p className="py-8 text-center text-xs text-muted">기록된 설치 실패가 없습니다</p>}
+              empty={<p className="py-8 text-center text-xs text-muted">{t('기록된 설치 실패가 없습니다', 'No install failures recorded')}</p>}
             />
           </div>
         </Card>
         <Card>
-          <CardHeader title="자동 중단 규칙" actions={
-            <Button size="sm" loading={evaluating} onClick={evaluate}>지금 평가</Button>} />
+          <CardHeader title={t('자동 중단 규칙', 'Auto-halt rules')} actions={
+            <Button size="sm" loading={evaluating} onClick={evaluate}>{t('지금 평가', 'Evaluate now')}</Button>} />
           <div className="space-y-4 p-4">
             <KeyValue items={[
-              ['최소 표본', num(r.halt_rules.min_sample)],
-              ['설치 실패율', r.halt_rules.max_error_rate != null ? `> ${pct(r.halt_rules.max_error_rate)}` : '—'],
-              ['부팅 폴백률', r.halt_rules.max_boot_fallback_rate != null ? `> ${pct(r.halt_rules.max_boot_fallback_rate)}` : '—'],
-              ['오류 코드별', Object.keys(r.halt_rules.max_error_code_rate).length
+              [t('최소 표본', 'Min sample'), num(r.halt_rules.min_sample)],
+              [t('설치 실패율', 'Install failure rate'), r.halt_rules.max_error_rate != null ? `> ${pct(r.halt_rules.max_error_rate)}` : '—'],
+              [t('부팅 폴백률', 'Boot fallback rate'), r.halt_rules.max_boot_fallback_rate != null ? `> ${pct(r.halt_rules.max_boot_fallback_rate)}` : '—'],
+              [t('오류 코드별', 'Per error code'), Object.keys(r.halt_rules.max_error_code_rate).length
                 ? Object.entries(r.halt_rules.max_error_code_rate).map(([c, v]) => `${c}: > ${pct(v)}`).join(', ') : '—'],
-              ['중단 시', r.halt_mode === 'stop_new' ? '신규 할당만 중단' : '진행 중 기기도 중단'],
+              [t('중단 시', 'On halt'), r.halt_mode === 'stop_new' ? t('신규 할당만 중단', 'Stop new assignments only') : t('진행 중 기기도 중단', 'Also stop in-progress devices')],
             ]} />
             {evaluation && (
               <div className={`rounded-md border px-3 py-2.5 text-xs ${evaluation.halt ? 'border-critical/30 bg-critical/5' : 'border-good/30 bg-good/5'}`}>
-                <p className="font-semibold text-ink">{evaluation.halt ? '중단 기준 초과' : '기준 이내'}</p>
+                <p className="font-semibold text-ink">{evaluation.halt ? t('중단 기준 초과', 'Halt threshold exceeded') : t('기준 이내', 'Within thresholds')}</p>
                 {evaluation.reasons.map((reason) => <p key={reason} className="mt-0.5 text-ink-2">{reason}</p>)}
-                {!evaluation.halt && <p className="mt-0.5 text-muted">시도 {evaluation.window.attempted} · 판정 {evaluation.window.installed}</p>}
+                {!evaluation.halt && <p className="mt-0.5 text-muted">{t(`시도 ${evaluation.window.attempted} · 판정 ${evaluation.window.installed}`, `Attempts ${evaluation.window.attempted} · Verdicts ${evaluation.window.installed}`)}</p>}
               </div>
             )}
           </div>
           <div className="border-t border-line p-4">
-            <p className="mb-2 text-xs font-medium text-muted">기기 정책</p>
+            <p className="mb-2 text-xs font-medium text-muted">{t('기기 정책', 'Device policy')}</p>
             <KeyValue items={[
-              ['네트워크', r.policy.require_unmetered ? '비측정 네트워크만' : '제한 없음'],
-              ['최소 배터리', `${r.policy.min_battery_pct}%`],
-              ['최대 시도', `${r.policy.max_attempts}회`],
-              ['체크 주기', `${Math.round(r.policy.check_interval_s / 3600)}시간 ±10%`],
+              [t('네트워크', 'Network'), r.policy.require_unmetered ? t('비측정 네트워크만', 'Unmetered only') : t('제한 없음', 'Any')],
+              [t('최소 배터리', 'Min battery'), `${r.policy.min_battery_pct}%`],
+              [t('최대 시도', 'Max attempts'), t(`${r.policy.max_attempts}회`, `${r.policy.max_attempts}`)],
+              [t('체크 주기', 'Check interval'), t(`${Math.round(r.policy.check_interval_s / 3600)}시간 ±10%`, `${Math.round(r.policy.check_interval_s / 3600)}h ±10%`)],
             ]} />
           </div>
         </Card>
@@ -215,10 +224,10 @@ export default function RolloutDetailPage({ id }: { id: number }) {
           onConfirm={async (reason) => {
             try {
               await api.transition(id, action, reason || undefined)
-              toast({ kind: 'success', title: `${ACTION[action].label} 완료` })
+              toast({ kind: 'success', title: t(`${ACTION[action].label} 완료`, `${ACTION[action].label} done`) })
               reload()
             } catch (e) {
-              toast({ kind: 'error', title: `${ACTION[action].label} 실패`, description: (e as Error).message })
+              toast({ kind: 'error', title: t(`${ACTION[action].label} 실패`, `${ACTION[action].label} failed`), description: (e as Error).message })
               throw e
             }
           }} />
