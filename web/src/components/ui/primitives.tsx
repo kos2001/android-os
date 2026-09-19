@@ -1,6 +1,7 @@
 import { Check, Copy, Loader2 } from 'lucide-react'
 import { forwardRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode,
   type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
+import { tr } from '../../lib/i18n'
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ')
@@ -144,9 +145,9 @@ export function ErrorBanner({ error, onRetry }: { error: Error; onRetry?: () => 
   return (
     <div role="alert" className="flex items-start justify-between gap-3 rounded-md border border-critical/30 bg-critical/5 px-3 py-2.5 text-[13px]">
       <span className="whitespace-pre-wrap text-ink">
-        <b className="font-semibold text-critical">오류</b> · {error.message}
+        <b className="font-semibold text-critical">{tr('오류', 'Error')}</b> · {error.message}
       </span>
-      {onRetry && <Button size="sm" variant="ghost" onClick={onRetry}>다시 시도</Button>}
+      {onRetry && <Button size="sm" variant="ghost" onClick={onRetry}>{tr('다시 시도', 'Retry')}</Button>}
     </div>
   )
 }
@@ -157,7 +158,7 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
     <Button
       size="sm"
       variant="ghost"
-      aria-label={label ?? '복사'}
+      aria-label={label ?? tr('복사', 'Copy')}
       icon={done ? <Check className="size-3.5 text-good" /> : <Copy className="size-3.5" />}
       onClick={(e) => {
         e.stopPropagation()

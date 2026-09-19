@@ -1,6 +1,7 @@
 import { ArrowDown, ArrowUp, ChevronsUpDown, Search } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { cx, Input, Skeleton } from './primitives'
+import { tr } from '../../lib/i18n'
 
 export interface Column<T> {
   key: string
@@ -55,7 +56,7 @@ export function DataTable<T>({ rows, columns, rowKey, onRowClick, loading, searc
           {searchText && (
             <div className="relative w-full max-w-xs">
               <Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-muted" />
-              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={searchPlaceholder ?? '검색'}
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={searchPlaceholder ?? tr('검색', 'Search')}
                 className="pl-8" />
             </div>
           )}
@@ -94,7 +95,7 @@ export function DataTable<T>({ rows, columns, rowKey, onRowClick, loading, searc
                 </tr>
               ))
             ) : visible.length === 0 ? (
-              <tr><td colSpan={columns.length}>{empty ?? <p className="py-10 text-center text-muted">결과가 없습니다</p>}</td></tr>
+              <tr><td colSpan={columns.length}>{empty ?? <p className="py-10 text-center text-muted">{tr('결과가 없습니다', 'No results')}</p>}</td></tr>
             ) : (
               visible.map((row) => (
                 <tr
