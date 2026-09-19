@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { AppShell, Breadcrumbs, NAV } from './components/layout'
 import { useRoute } from './lib/hooks'
 import { tr, useLang } from './lib/i18n'
+import AboutPage from './pages/About'
 import AuditPage from './pages/Audit'
 import DeltaPage from './pages/Delta'
 import KnowledgePage from './pages/Knowledge'
@@ -38,6 +39,7 @@ export default function App() {
       page = Number.isFinite(numericId) ? <RolloutDetailPage id={numericId} /> : <RolloutsPage />
       if (Number.isFinite(numericId)) crumbs.push({ label: `#${numericId}` })
       break
+    case 'about': page = <AboutPage />; break
     case 'knowledge': page = <KnowledgePage />; break
     case 'vintf': page = <VintfPage />; break
     case 'packages': page = <PackagesPage />; break

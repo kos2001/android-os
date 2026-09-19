@@ -1,4 +1,4 @@
-import { Activity, BookOpen, Boxes, ChevronRight, Command, Cpu, FileDiff, GitCompareArrows, KeyRound, LayoutDashboard,
+import { Activity, BookOpen, Info, Boxes, ChevronRight, Command, Cpu, FileDiff, GitCompareArrows, KeyRound, LayoutDashboard,
   Languages, Menu, Monitor, Moon, Rocket, ScrollText, Search, Sun } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api, type Health } from '../lib/api'
@@ -10,7 +10,10 @@ import { cx, Kbd } from './ui/primitives'
 export const NAV: { group: [string, string] | null; items: { path: string; label: [string, string]; icon: ReactNode; keywords?: string }[] }[] = [
   {
     group: null,
-    items: [{ path: '/overview', label: ['개요', 'Overview'], icon: <LayoutDashboard className="size-4" />, keywords: 'overview dashboard 개요' }],
+    items: [
+      { path: '/about', label: ['소개', 'About'], icon: <Info className="size-4" />, keywords: 'about intro introduction 소개 서비스' },
+      { path: '/overview', label: ['개요', 'Overview'], icon: <LayoutDashboard className="size-4" />, keywords: 'overview dashboard 개요' },
+    ],
   },
   {
     group: ['업그레이드 준비', 'Upgrade readiness'],
