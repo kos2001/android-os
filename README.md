@@ -30,6 +30,7 @@ Android 기기/BSP의 메이저 OS 업그레이드(예: 16 → 17)를 지원하�
 | `vintf` | device manifest(+fragments)·framework matrix 파싱, matrix diff, manifest×matrix 검사 |
 | `remote` | HTTP Range 원격 파일 — 수 GB OTA zip 을 수백 KB 만 읽고 검사 |
 | `kernel` | GKI `uname -r`·kernel `.config`(.gz) 해석, vendor `.ko` ELF 분석, KMI symbol list 대조, 커널 uprev 후보 |
+| `drivers` | 드라이버 인벤토리 — 커널 드라이버(.ko: import API·alias 버스)와 HAL 을 서브시스템별로 분류, 드라이버별 ION 사용 |
 
 ```sh
 python3 -m unittest discover -s tests -t .   # 코어만 (Python ≥ 3.10)

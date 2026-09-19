@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, Boxes, CheckCircle2, Cpu, Database, FileCode2, FileDiff, Gauge, GitBranch, Globe,
+import { ArrowRight, BookOpen, CircuitBoard, Boxes, CheckCircle2, Cpu, Database, FileCode2, FileDiff, Gauge, GitBranch, Globe,
   Layers, Lock, Monitor, OctagonX, PackageCheck, Rocket, ScrollText, ShieldCheck, Smartphone, Sparkles, Upload,
   Workflow } from 'lucide-react'
 import type { ReactNode } from 'react'
@@ -116,6 +116,8 @@ export default function AboutPage() {
       body: t('ION(DMA-BUF heaps 로 이전), VNDK(Android 15+)', 'ION (move to DMA-BUF heaps), VNDK (Android 15+)') },
     { hue: 'lime', icon: <Layers className="size-4" />, title: t('16 KB 페이지', '16 KB pages'),
       body: t('커널 config 로 페이지 크기 확인, prebuilt 정렬 점검', 'Page size from kernel config, prebuilt alignment checks') },
+    { hue: 'teal', icon: <CircuitBoard className="size-4" />, title: t('드라이버', 'Drivers'),
+      body: t('커널 드라이버·HAL 서브시스템별 인벤토리, 드라이버별 ION 사용·KMI 누락', 'Kernel drivers and HALs by subsystem; per-driver ION use and missing KMI symbols') },
     { hue: 'amber', icon: <Lock className="size-4" />, title: 'SELinux',
       body: t('Android 17 memfd_class / memfd_file 대응', 'Android 17 memfd_class / memfd_file readiness') },
   ]

@@ -104,6 +104,17 @@
 
 `.venv/bin/python -m unittest discover -s tests -t .` → **102 tests OK** (네트워크 1 skip).
 
+## 0.4 진행 결과 (2026-09-19) — 드라이버 인벤토리
+
+| 항목 | 구현 | 검증 |
+|---|---|---|
+| 모듈 메타데이터 | `.modinfo` 의 `description`, `alias`(MODULE_DEVICE_TABLE) 저장 — 이전에 저장된 모듈은 기본값 | 단위 테스트 |
+| 분류 | 커널 드라이버: import 한 커널 API 접두사(drm_·v4l2_·snd_·cfg80211_·input_·regulator_ …) 점수, alias 로 버스(of·i2c·sdio·pci·usb·platform …). HAL: `android.hardware.<name>` 매핑. **추정**이므로 판정에 쓰지 않음 | 단위 테스트 |
+| 판정 연결 | `ion_*` 를 import 하는 드라이버가 있으면 프로파일 `uses_ion` 과 무관하게 `ION_REMOVED` blocker, 드라이버 이름 표기 | 단위·API 테스트 |
+| API·콘솔 | `GET /admin/v1/platforms/{id}/drivers` (판정 기준 커널 브랜치의 KMI 누락 수 포함), 플랫폼 상세 “드라이버 인벤토리”(서브시스템별 색상), 소개 페이지 항목 | 브라우저 확인(실제 android17-6.18 symbol list 기준) |
+
+한계: 드라이버 분류는 import 심볼 기반 추정이라 여러 프레임워크를 쓰는 드라이버는 가장 많이 쓰는 쪽으로만 분류됨. 드라이버 ↔ HAL 의 실제 연결(어떤 HAL 이 어떤 커널 드라이버를 쓰는지)은 알 수 없어 같은 서브시스템에 나란히 보여 줄 뿐임.
+
 ## 1. 단계별 계획
 
 선행 조건: [00 §3](00-scope-assumptions.md) 질문 Q1(범위), Q6(기기 인증), Q7(인프라) 확정.

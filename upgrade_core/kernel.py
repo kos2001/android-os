@@ -129,6 +129,8 @@ class KernelModule:
     depends: tuple[str, ...]
     undefined: tuple[str, ...]  # 모듈이 가져다 쓰는 심볼
     exports: tuple[str, ...]  # EXPORT_SYMBOL* 로 내보내는 심볼
+    description: str | None = None  # MODULE_DESCRIPTION
+    aliases: tuple[str, ...] = ()  # MODULE_DEVICE_TABLE 이 만든 alias (of:, pci:, usb:, platform: …)
 
     @property
     def kernel_release(self) -> str | None:
@@ -136,12 +138,14 @@ class KernelModule:
 
     def to_dict(self) -> dict:
         return {"filename": self.filename, "name": self.name, "vermagic": self.vermagic, "license": self.license,
-                "depends": list(self.depends), "undefined": list(self.undefined), "exports": list(self.exports)}
+                "depends": list(self.depends), "undefined": list(self.undefined), "exports": list(self.exports),
+                "description": self.description, "aliases": list(self.aliases)}
 
     @classmethod
     def from_dict(cls, d: dict) -> "KernelModule":
         return cls(d["filename"], d["name"], d.get("vermagic"), d.get("license"), tuple(d.get("depends", ())),
-                   tuple(d.get("undefined", ())), tuple(d.get("exports", ())))
+                   tuple(d.get("undefined", ())), tuple(d.get("exports", ())), d.get("description"),
+                   tuple(d.get("aliases", ())))
 
 
 ELF_HEADER = struct.Struct("<16sHHIQQQIHHHHHH")
@@ -150,6 +154,7 @@ SYMBOL = struct.Struct("<IBBHQQ")
 ET_REL, SHT_SYMTAB, SHN_UNDEF = 1, 2, 0
 STB_GLOBAL, STB_WEAK = 1, 2
 KSYMTAB_PREFIX = "__ksymtab_"
+MAX_ALIASES = 200
 NOT_EXPORTS = {"__ksymtab_strings"}
 
 
@@ -213,7 +218,8 @@ def inspect_module(data: bytes, filename: str = "module.ko") -> KernelModule:
     depends = tuple(d for d in ",".join(modinfo.get("depends", [])).split(",") if d)
     return KernelModule(filename, (modinfo.get("name") or [stem])[0], (modinfo.get("vermagic") or [None])[0],
                         (modinfo.get("license") or [None])[0], depends, tuple(sorted(undefined)),
-                        tuple(sorted(exports)))
+                        tuple(sorted(exports)), (modinfo.get("description") or [None])[0],
+                        tuple(modinfo.get("alias", [])[:MAX_ALIASES]))
 
 
 # --------------------------------------------------------------------------- #

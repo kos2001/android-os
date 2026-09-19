@@ -167,9 +167,12 @@ class KernelReadinessTests(unittest.TestCase):
                                             vermagic="6.1.75-android14-11 SMP aarch64"))]
         result = evaluate(self.profile(), "17", AS_OF, target_kernel_branch="android17-6.18",
                           kernel_modules=mods, kmi_symbols=parse_symbol_list(SYMBOL_LIST))
-        self.assertTrue(result["ready"])
+        # ion_* import 는 프로파일 uses_ion 과 무관하게 ION blocker 가 된다 (드라이버 이름 포함)
+        self.assertFalse(result["ready"])
+        self.assertEqual(rule_ids(result, "blocker"), ["ION_REMOVED"])
+        self.assertIn("wlan", result["findings"][0]["detail"])
         self.assertEqual(rule_ids(result, "warning"), ["KMI_SYMBOL_MISSING"])
-        self.assertIn("ion_alloc", result["findings"][0]["title"])
+        self.assertIn("ion_alloc", result["findings"][1]["title"])
         self.assertIn("KERNEL_MODULE_REBUILD", rule_ids(result, "info"))
 
     def test_many_missing_symbols_are_capped(self):

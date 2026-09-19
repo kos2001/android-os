@@ -69,6 +69,33 @@ export interface UprevReport {
   recommended: string | null
 }
 
+export type Subsystem = 'display' | 'camera' | 'audio' | 'wifi' | 'bluetooth' | 'input' | 'usb' | 'storage' | 'power'
+  | 'sensors' | 'gnss' | 'nfc' | 'network' | 'memory' | 'other'
+
+export interface DriverEntry {
+  kind: 'kernel' | 'hal'
+  name: string
+  subsystem: Subsystem
+  detail: string | null
+  buses: string[]
+  uses_ion: boolean
+  format: 'aidl' | 'hidl' | 'native' | null
+  version: string | null
+  branch: string | null
+  license: string | null
+  kmi_missing?: number | null
+  kmi_missing_symbols?: string[]
+}
+
+export interface DriverInventory {
+  subsystems: { subsystem: Subsystem; kernel: DriverEntry[]; hal: DriverEntry[] }[]
+  totals: { kernel: number; hal: number; hidl: number; ion_drivers: string[] }
+  kernel_branch: string
+  kmi_checked: boolean
+  has_modules: boolean
+  has_manifest: boolean
+}
+
 export interface SymbolListInfo {
   branch: string
   symbol_count: number
@@ -410,6 +437,8 @@ export const api = {
   },
   kernelUprev: (id: number, target_release: string) =>
     get<UprevReport>(`/admin/v1/platforms/${id}/kernel/uprev?target_release=${encodeURIComponent(target_release)}`),
+  drivers: (id: number, kernel_branch?: string) =>
+    get<DriverInventory>(`/admin/v1/platforms/${id}/drivers${kernel_branch ? `?kernel_branch=${encodeURIComponent(kernel_branch)}` : ''}`),
   symbolLists: () => get<SymbolListInfo[]>('/admin/v1/kernel/symbol-lists'),
   patchWorkItem: (id: number, body: Partial<Pick<Finding, 'status' | 'owner' | 'waive_reason' | 'external_ref'>>) =>
     request<unknown>('PATCH', `/admin/v1/work-items/${id}`, body),

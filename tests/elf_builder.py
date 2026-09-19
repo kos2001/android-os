@@ -5,10 +5,11 @@ STB_GLOBAL, STB_LOCAL, STT_FUNC, STT_OBJECT = 1, 0, 2, 1
 
 
 def build_module(name="vendor_mod", vermagic="6.18.0-android17-0-g0 SMP preempt mod_unload modversions aarch64",
-                 undefined=(), exports=(), locals_=(), depends="", license="GPL") -> bytes:
-    modinfo = b"".join(f"{k}={v}".encode() + b"\0" for k, v in
-                       (("license", license), ("depends", depends), ("name", name), ("vermagic", vermagic)) if v
-                       is not None)
+                 undefined=(), exports=(), locals_=(), depends="", license="GPL", description=None,
+                 aliases=()) -> bytes:
+    fields = [("license", license), ("depends", depends), ("name", name), ("vermagic", vermagic),
+              ("description", description), *(("alias", a) for a in aliases)]
+    modinfo = b"".join(f"{k}={v}".encode() + b"\0" for k, v in fields if v is not None)
     strtab = bytearray(b"\0")
     symbols = [struct.pack("<IBBHQQ", 0, 0, 0, 0, 0, 0)]
 

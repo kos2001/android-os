@@ -14,6 +14,7 @@ API (docs/design/04-api-spec.md §2 의 부분집합):
   PUT   /admin/v1/platforms/{id}/kernel             uname -r · kernel .config(.gz) · vendor .ko (multipart, 부분 교체)
   GET   /admin/v1/platforms/{id}/kernel
   GET   /admin/v1/platforms/{id}/kernel/uprev       ?target_release=17 — uprev 후보·권장 브랜치
+  GET   /admin/v1/platforms/{id}/drivers           ?kernel_branch= — 커널 드라이버(.ko)·HAL 서브시스템별 인벤토리
   PUT   /admin/v1/kernel/symbol-lists/{branch}     KMI symbol list(abi_gki_aarch64*) 업로드
   GET   /admin/v1/kernel/symbol-lists
   PATCH /admin/v1/work-items/{id}
@@ -45,9 +46,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from upgrade_core import __version__
+from upgrade_core.drivers import build_inventory
 from upgrade_core.kernel import (BRANCH_RE, KernelArtifactError, KernelModule, config_hints, inspect_module,
-                                 parse_kconfig, parse_kernel_release, parse_symbol_list, read_config_bytes,
-                                 recommended_uprev, uprev_candidates)
+                                 check_modules, parse_kconfig, parse_kernel_release, parse_symbol_list,
+                                 read_config_bytes, recommended_uprev, uprev_candidates)
 from upgrade_core.readiness import PlatformProfile, evaluate, load_kb, release_entry, release_key
 from upgrade_core.vintf import VintfError, diff_matrices, parse_manifest, parse_matrix
 
@@ -264,6 +266,31 @@ def create_app(store: Store | None = None, api_keys: str | None = None, package_
         return {"current_branch": platform["kernel_branch"], "target_release": target_release,
                 "support_until": platform["support_until"], "candidates": candidates,
                 "recommended": best["branch"] if best else None}
+
+    @app.get("/admin/v1/platforms/{pid}/drivers")
+    def drivers(pid: int, kernel_branch: str | None = None, _: Principal = Depends(ANY), store: Store = Depends(db)):
+        platform = store.get_platform(pid)
+        branch = kernel_branch or platform["kernel_branch"]
+        if not BRANCH_RE.match(branch):
+            raise HTTPException(422, f"bad kernel branch {branch!r} (expected androidNN-X.Y)")
+        artifacts = store.kernel_artifacts(pid)
+        modules = [KernelModule.from_dict(m) for m in artifacts["modules"]] if artifacts else []
+        documents = store.manifest_documents(pid)
+        hals = parse_manifest(*(d["xml"] for d in documents)).hals if documents else []
+        inventory = build_inventory(modules, hals)
+        symbols = store.symbol_list(branch) if modules else None
+        missing_by_module: dict[str, list[str]] = {}
+        if symbols is not None:
+            for sym, users in check_modules(modules, symbols, branch).missing.items():
+                for user in users:
+                    missing_by_module.setdefault(user, []).append(sym)
+        for group in inventory["subsystems"]:
+            for entry in group["kernel"]:
+                missing = sorted(missing_by_module.get(entry["name"], []))
+                entry["kmi_missing"] = None if symbols is None else len(missing)
+                entry["kmi_missing_symbols"] = missing[:50]
+        return {**inventory, "kernel_branch": branch, "kmi_checked": symbols is not None,
+                "has_modules": bool(modules), "has_manifest": bool(documents)}
 
     @app.put("/admin/v1/kernel/symbol-lists/{branch}", status_code=201)
     async def upload_symbol_list(branch: str, files: list[UploadFile] = File(...),

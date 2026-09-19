@@ -111,6 +111,7 @@
 | PUT | `/admin/v1/platforms/{id}/kernel` | engineer | multipart `kernel_release`(uname -r, GKI 형식·플랫폼 브랜치 일치) · `config`(.config 또는 config.gz) · `modules`(.ko 여러 개). 준 항목만 교체. config 의 `CONFIG_ION` 은 `uses_ion` 에, `CONFIG_ARM64_16K_PAGES=y` 는 `supports_16kb=true` 에 반영(감사 로그) |
 | GET | `/admin/v1/platforms/{id}/kernel` | 전체 | 릴리스·KMI generation·config 요약·모듈별 import/export 심볼 수 |
 | GET | `/admin/v1/platforms/{id}/kernel/uprev?target_release=17` | 전체 | 목표 릴리스 지원 브랜치 중 현재 이상 후보(EOL·QPR 제외·지원 기간 충족·symbol list 등록 여부)와 `recommended` |
+| GET | `/admin/v1/platforms/{id}/drivers?kernel_branch=` | 전체 | 드라이버 인벤토리: 서브시스템별 커널 드라이버(description·버스·ION 사용·vermagic 브랜치·`kmi_missing`)와 HAL(format·version). 분류는 추정이며 판정에는 쓰지 않음 |
 | PUT | `/admin/v1/kernel/symbol-lists/{branch}` | engineer | KMI symbol list 파일들(multipart `files`, `source`) → 합집합 저장. 빈 vendor 파일은 허용, 전체가 비면 422 |
 | GET | `/admin/v1/kernel/symbol-lists` | 전체 | 등록된 브랜치·심볼 수·파일·출처 |
 | GET | `/admin/v1/readiness-runs/{id}` | 전체 | 결과·KB 버전. finding 은 `title`/`detail`(한국어)와 `title_en`/`detail_en`(영어, 도입 전 판정은 null) |
