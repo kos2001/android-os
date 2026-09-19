@@ -2,6 +2,7 @@ import { AlertOctagon, AlertTriangle, Archive, CheckCircle2, CircleDashed, Circl
   PauseCircle, PlayCircle, RotateCcw, XCircle } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { AssignmentState, OtaPackage, RolloutState, Severity, WorkStatus } from '../../lib/api'
+import { localizedRecord, tr } from '../../lib/i18n'
 import { cx } from './primitives'
 
 // 상태는 색만으로 전달하지 않는다 — 항상 아이콘 + 라벨 (dataviz 상태 팔레트 규칙)
@@ -30,17 +31,17 @@ export function Badge({ tone = 'neutral', icon, children, className }: {
 
 const I = 'size-3'
 
-const ROLLOUT: Record<RolloutState, [Tone, ReactNode, string]> = {
-  draft: ['neutral', <CircleDashed className={I} />, '초안'],
-  active: ['accent', <PlayCircle className={I} />, '진행 중'],
-  paused: ['warning', <PauseCircle className={I} />, '일시정지'],
-  halted: ['critical', <OctagonX className={I} />, '중단됨'],
-  completed: ['good', <CheckCircle2 className={I} />, '완료'],
+const ROLLOUT: Record<RolloutState, [Tone, ReactNode, [string, string]]> = {
+  draft: ['neutral', <CircleDashed className={I} />, ['초안', 'Draft']],
+  active: ['accent', <PlayCircle className={I} />, ['진행 중', 'Active']],
+  paused: ['warning', <PauseCircle className={I} />, ['일시정지', 'Paused']],
+  halted: ['critical', <OctagonX className={I} />, ['중단됨', 'Halted']],
+  completed: ['good', <CheckCircle2 className={I} />, ['완료', 'Completed']],
 }
 
 export function RolloutBadge({ state }: { state: RolloutState }) {
   const [tone, icon, label] = ROLLOUT[state]
-  return <Badge tone={tone} icon={icon}>{label}</Badge>
+  return <Badge tone={tone} icon={icon}>{tr(...label)}</Badge>
 }
 
 const PACKAGE: Record<OtaPackage['status'], [Tone, ReactNode, string]> = {
@@ -65,25 +66,25 @@ export function SeverityBadge({ severity }: { severity: Severity }) {
   return <Badge tone={tone} icon={icon}>{label}</Badge>
 }
 
-export const WORK_STATUS_LABEL: Record<WorkStatus, string> = {
-  todo: '할 일', in_progress: '진행 중', done: '완료', waived: '면제',
-}
+export const WORK_STATUS_LABEL: Record<WorkStatus, string> = localizedRecord({
+  todo: ['할 일', 'To do'], in_progress: ['진행 중', 'In progress'], done: ['완료', 'Done'], waived: ['면제', 'Waived'],
+})
 
 export function ReadyBadge({ ready }: { ready: boolean | null | undefined }) {
-  if (ready == null) return <Badge icon={<CircleDashed className={I} />}>미판정</Badge>
+  if (ready == null) return <Badge icon={<CircleDashed className={I} />}>{tr('미판정', 'Not evaluated')}</Badge>
   return ready
-    ? <Badge tone="good" icon={<CheckCircle2 className={I} />}>업그레이드 가능</Badge>
-    : <Badge tone="critical" icon={<AlertOctagon className={I} />}>Blocker 있음</Badge>
+    ? <Badge tone="good" icon={<CheckCircle2 className={I} />}>{tr('업그레이드 가능', 'Ready')}</Badge>
+    : <Badge tone="critical" icon={<AlertOctagon className={I} />}>{tr('Blocker 있음', 'Has blockers')}</Badge>
 }
 
-export const ASSIGNMENT_LABEL: Record<AssignmentState, string> = {
-  offered: '제공됨',
-  downloading: '다운로드 중',
-  installed_pending_reboot: '재부팅 대기',
-  boot_success: '부팅 성공',
-  boot_fallback: '부팅 폴백',
-  failed: '설치 실패',
-}
+export const ASSIGNMENT_LABEL: Record<AssignmentState, string> = localizedRecord({
+  offered: ['제공됨', 'Offered'],
+  downloading: ['다운로드 중', 'Downloading'],
+  installed_pending_reboot: ['재부팅 대기', 'Pending reboot'],
+  boot_success: ['부팅 성공', 'Boot success'],
+  boot_fallback: ['부팅 폴백', 'Boot fallback'],
+  failed: ['설치 실패', 'Install failed'],
+})
 
 export function ChannelBadge({ channel }: { channel: string }) {
   return <Badge icon={<CircleDot className={I} />}>{channel}</Badge>

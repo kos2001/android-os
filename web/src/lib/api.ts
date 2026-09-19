@@ -83,6 +83,8 @@ export interface Finding {
   severity: Severity
   title: string
   detail: string
+  title_en?: string | null
+  detail_en?: string | null
   sources: string[]
   work_item_id: number | null
   status: WorkStatus | null

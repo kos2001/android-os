@@ -1,19 +1,27 @@
-const rtf = new Intl.RelativeTimeFormat('ko', { numeric: 'auto' })
+import { getLang, locale, tr } from './i18n'
+
+const rtfCache = new Map<string, Intl.RelativeTimeFormat>()
+function rtf(): Intl.RelativeTimeFormat {
+  const lang = getLang()
+  let f = rtfCache.get(lang)
+  if (!f) rtfCache.set(lang, (f = new Intl.RelativeTimeFormat(lang, { numeric: 'auto' })))
+  return f
+}
 
 export function relativeTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   const diff = (new Date(iso).getTime() - Date.now()) / 1000
   const abs = Math.abs(diff)
-  if (abs < 45) return '방금'
-  if (abs < 3600) return rtf.format(Math.round(diff / 60), 'minute')
-  if (abs < 86400) return rtf.format(Math.round(diff / 3600), 'hour')
-  if (abs < 86400 * 30) return rtf.format(Math.round(diff / 86400), 'day')
+  if (abs < 45) return tr('방금', 'just now')
+  if (abs < 3600) return rtf().format(Math.round(diff / 60), 'minute')
+  if (abs < 86400) return rtf().format(Math.round(diff / 3600), 'hour')
+  if (abs < 86400 * 30) return rtf().format(Math.round(diff / 86400), 'day')
   return dateTime(iso)
 }
 
 export function dateTime(iso: string | null | undefined): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleString('ko-KR', {
+  return new Date(iso).toLocaleString(locale(), {
     year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
   })
 }
@@ -31,7 +39,7 @@ export function bytes(n: number | null | undefined): string {
 }
 
 export function num(n: number | null | undefined): string {
-  return n == null ? '—' : n.toLocaleString('ko-KR')
+  return n == null ? '—' : n.toLocaleString(locale())
 }
 
 export function pct(n: number | null | undefined, digits = 1): string {

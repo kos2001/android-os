@@ -42,7 +42,8 @@ ANDROID_OS_NETWORK_TESTS=1 .venv/bin/python -m unittest tests.test_remote       
 
 React + TypeScript + Tailwind 운영 콘솔. 개요 대시보드, 플랫폼 준비도 판정·작업 항목, 릴리스 지식베이스(커널 지원 기간 차트),
 VINTF matrix 비교, OTA 패키지 등록·검사, 롤아웃 단계 운영(진행 추이·오류 코드·자동 중단 평가), Delta 후보, 감사 로그.
-명령 팔레트(⌘K), 라이트/다크 테마, 모바일 메뉴, 모든 차트의 표 보기를 지원한다.
+명령 팔레트(⌘K), 라이트/다크 테마, 모바일 메뉴, 모든 차트의 표 보기, **한국어·영어 UI**(상단 바 `EN/한` 버튼 또는 설정 — 첫 방문은 브라우저 언어)를 지원한다.
+readiness finding 은 `title`/`detail`(한국어)과 `title_en`/`detail_en`(영어)을 함께 저장·응답한다(영어 도입 전 판정은 한국어만).
 
 ```sh
 cd web && npm ci && npm run build      # web/dist 생성 → backend 가 / 에서 서빙 (index.html no-cache, 해시 에셋 immutable)

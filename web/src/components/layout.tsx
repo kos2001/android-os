@@ -1,36 +1,38 @@
 import { Activity, BookOpen, Boxes, ChevronRight, Command, Cpu, FileDiff, GitCompareArrows, KeyRound, LayoutDashboard,
-  Menu, Monitor, Moon, Rocket, ScrollText, Search, Sun } from 'lucide-react'
+  Languages, Menu, Monitor, Moon, Rocket, ScrollText, Search, Sun } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api, type Health } from '../lib/api'
 import { navigate, useAsync, useHotkey, useRoute, useTheme, type ThemeChoice } from '../lib/hooks'
+import { tr, useLang } from '../lib/i18n'
 import { cx, Kbd } from './ui/primitives'
 
-export const NAV: { group: string; items: { path: string; label: string; icon: ReactNode; keywords?: string }[] }[] = [
+// 라벨은 [한국어, English]. 렌더 시 tr(...) 로 고른다. keywords 는 두 언어 검색용.
+export const NAV: { group: [string, string] | null; items: { path: string; label: [string, string]; icon: ReactNode; keywords?: string }[] }[] = [
   {
-    group: '',
-    items: [{ path: '/overview', label: '개요', icon: <LayoutDashboard className="size-4" />, keywords: 'overview dashboard' }],
+    group: null,
+    items: [{ path: '/overview', label: ['개요', 'Overview'], icon: <LayoutDashboard className="size-4" />, keywords: 'overview dashboard 개요' }],
   },
   {
-    group: '업그레이드 준비',
+    group: ['업그레이드 준비', 'Upgrade readiness'],
     items: [
-      { path: '/platforms', label: '플랫폼', icon: <Cpu className="size-4" />, keywords: 'readiness platform bsp' },
-      { path: '/knowledge', label: '릴리스 지식베이스', icon: <BookOpen className="size-4" />, keywords: 'kb kernel gki fcm' },
-      { path: '/vintf', label: 'VINTF 비교', icon: <FileDiff className="size-4" />, keywords: 'matrix diff hal' },
+      { path: '/platforms', label: ['플랫폼', 'Platforms'], icon: <Cpu className="size-4" />, keywords: 'readiness platform bsp' },
+      { path: '/knowledge', label: ['릴리스 지식베이스', 'Release knowledge base'], icon: <BookOpen className="size-4" />, keywords: 'kb kernel gki fcm' },
+      { path: '/vintf', label: ['VINTF 비교', 'VINTF compare'], icon: <FileDiff className="size-4" />, keywords: 'matrix diff hal' },
     ],
   },
   {
-    group: 'OTA 배포',
+    group: ['OTA 배포', 'OTA delivery'],
     items: [
-      { path: '/packages', label: '패키지', icon: <Boxes className="size-4" />, keywords: 'ota package zip' },
-      { path: '/rollouts', label: '롤아웃', icon: <Rocket className="size-4" />, keywords: 'rollout staged deploy' },
-      { path: '/delta', label: 'Delta 후보', icon: <GitCompareArrows className="size-4" />, keywords: 'incremental delta report' },
+      { path: '/packages', label: ['패키지', 'Packages'], icon: <Boxes className="size-4" />, keywords: 'ota package zip' },
+      { path: '/rollouts', label: ['롤아웃', 'Rollouts'], icon: <Rocket className="size-4" />, keywords: 'rollout staged deploy' },
+      { path: '/delta', label: ['Delta 후보', 'Delta candidates'], icon: <GitCompareArrows className="size-4" />, keywords: 'incremental delta report' },
     ],
   },
   {
-    group: '관리',
+    group: ['관리', 'Administration'],
     items: [
-      { path: '/audit', label: '감사 로그', icon: <ScrollText className="size-4" />, keywords: 'audit log' },
-      { path: '/settings', label: '설정', icon: <KeyRound className="size-4" />, keywords: 'settings api key theme' },
+      { path: '/audit', label: ['감사 로그', 'Audit log'], icon: <ScrollText className="size-4" />, keywords: 'audit log' },
+      { path: '/settings', label: ['설정', 'Settings'], icon: <KeyRound className="size-4" />, keywords: 'settings api key theme language 설정 언어' },
     ],
   },
 ]
@@ -45,13 +47,13 @@ function Sidebar({ health, className, onNavigate }: { health?: Health; className
         </div>
         <div className="leading-tight">
           <p className="text-[13px] font-semibold text-ink">OS Upgrade</p>
-          <p className="text-[11px] text-muted">Android 플랫폼 콘솔</p>
+          <p className="text-[11px] text-muted">{tr('Android 플랫폼 콘솔', 'Android platform console')}</p>
         </div>
       </div>
       <nav className="scrollbar-thin flex-1 space-y-4 overflow-y-auto px-2 py-3">
         {NAV.map((group) => (
-          <div key={group.group || 'root'}>
-            {group.group && <p className="mb-1 px-2 text-[11px] font-medium text-muted">{group.group}</p>}
+          <div key={group.items[0].path}>
+            {group.group && <p className="mb-1 px-2 text-[11px] font-medium text-muted">{tr(...group.group)}</p>}
             <ul className="space-y-0.5">
               {group.items.map((item) => {
                 const active = path === item.path || path.startsWith(item.path + '/')
@@ -61,7 +63,7 @@ function Sidebar({ health, className, onNavigate }: { health?: Health; className
                       className={cx('flex h-8 items-center gap-2.5 rounded-md px-2 text-[13px] transition-colors',
                         active ? 'bg-accent/10 font-medium text-ink' : 'text-ink-2 hover:bg-line/50 hover:text-ink')}>
                       <span className={active ? 'text-accent-ink' : 'text-muted'}>{item.icon}</span>
-                      {item.label}
+                      {tr(...item.label)}
                     </a>
                   </li>
                 )
@@ -73,7 +75,7 @@ function Sidebar({ health, className, onNavigate }: { health?: Health; className
       <div className="border-t border-line px-4 py-3 text-[11px] text-muted">
         <p className="flex items-center gap-1.5">
           <span className={cx('size-1.5 rounded-full', health ? 'bg-good' : 'bg-critical')} aria-hidden />
-          {health ? `API 연결됨 · v${health.version}` : 'API 연결 안 됨'}
+          {health ? `${tr('API 연결됨', 'API connected')} · v${health.version}` : tr('API 연결 안 됨', 'API disconnected')}
         </p>
         {health && <p className="mt-0.5">KB {health.kb_version}</p>}
       </div>
@@ -101,10 +103,11 @@ export function Breadcrumbs({ items }: { items: { label: ReactNode; href?: strin
 
 function Topbar({ onOpenPalette, onOpenMenu, crumbs }: { onOpenPalette: () => void; onOpenMenu: () => void; crumbs: ReactNode }) {
   const [theme, setTheme] = useTheme()
+  const [lang, setLang] = useLang()
   const order: ThemeChoice[] = ['system', 'light', 'dark']
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-page/85 px-4 backdrop-blur md:px-6">
-      <button onClick={onOpenMenu} aria-label="메뉴 열기"
+      <button onClick={onOpenMenu} aria-label={tr('메뉴 열기', 'Open menu')}
         className="flex size-8 items-center justify-center rounded-md text-ink-2 hover:bg-line/50 hover:text-ink md:hidden">
         <Menu className="size-4" />
       </button>
@@ -112,47 +115,58 @@ function Topbar({ onOpenPalette, onOpenMenu, crumbs }: { onOpenPalette: () => vo
       <button onClick={onOpenPalette}
         className="hidden h-8 w-64 items-center gap-2 rounded-md border border-line bg-raised px-2.5 text-[13px] text-muted shadow-sm transition hover:text-ink sm:flex">
         <Search className="size-4" />
-        <span className="flex-1 text-left">검색 또는 이동…</span>
+        <span className="flex-1 text-left">{tr('검색 또는 이동…', 'Search or jump to…')}</span>
         <Kbd><Command className="size-2.5" /></Kbd><Kbd>K</Kbd>
       </button>
-      <button onClick={onOpenPalette} aria-label="검색"
+      <button onClick={onOpenPalette} aria-label={tr('검색', 'Search')}
         className="flex size-8 items-center justify-center rounded-md text-ink-2 hover:bg-line/50 hover:text-ink sm:hidden">
         <Search className="size-4" />
       </button>
       <button
         onClick={() => setTheme(order[(order.indexOf(theme) + 1) % order.length])}
         className="flex size-8 items-center justify-center rounded-md text-ink-2 hover:bg-line/50 hover:text-ink"
-        aria-label={`테마: ${theme}`} title={`테마: ${{ system: '시스템', light: '라이트', dark: '다크' }[theme]}`}>
+        aria-label={`${tr('테마', 'Theme')}: ${theme}`}
+        title={`${tr('테마', 'Theme')}: ${{ system: tr('시스템', 'System'), light: tr('라이트', 'Light'), dark: tr('다크', 'Dark') }[theme]}`}>
         {THEME_ICON[theme]}
+      </button>
+      <button onClick={() => setLang(lang === 'ko' ? 'en' : 'ko')}
+        className="flex h-8 items-center gap-1 rounded-md px-2 text-[12px] font-medium text-ink-2 hover:bg-line/50 hover:text-ink"
+        aria-label={lang === 'ko' ? 'Switch to English' : '한국어로 전환'} title={lang === 'ko' ? 'English' : '한국어'}>
+        <Languages className="size-4" />{lang === 'ko' ? 'EN' : '한'}
       </button>
     </header>
   )
 }
 
 interface PaletteItem { id: string; label: string; hint: string; path: string; icon: ReactNode; keywords?: string }
+interface DynamicItem { id: string; label: string; kind: 'platform' | 'rollout'; detail: string; path: string; icon: ReactNode }
 
 function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [query, setQuery] = useState('')
   const [index, setIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
-  const dynamic = useAsync(async (): Promise<PaletteItem[]> => {
+  const [lang] = useLang()
+  const dynamic = useAsync(async (): Promise<DynamicItem[]> => {
     if (!open) return []
     const [platforms, rollouts] = await Promise.all([api.platforms().catch(() => []), api.rollouts().catch(() => [])])
     return [
-      ...platforms.map((p) => ({ id: `p${p.id}`, label: p.name, hint: `플랫폼 · ${p.soc}`, path: `/platforms/${p.id}`,
-        icon: <Cpu className="size-4" /> })),
-      ...rollouts.map((r) => ({ id: `r${r.id}`, label: r.name, hint: `롤아웃 · ${r.device}`, path: `/rollouts/${r.id}`,
-        icon: <Rocket className="size-4" /> })),
+      ...platforms.map((p): DynamicItem => ({ id: `p${p.id}`, label: p.name, kind: 'platform', detail: p.soc,
+        path: `/platforms/${p.id}`, icon: <Cpu className="size-4" /> })),
+      ...rollouts.map((r): DynamicItem => ({ id: `r${r.id}`, label: r.name, kind: 'rollout', detail: r.device,
+        path: `/rollouts/${r.id}`, icon: <Rocket className="size-4" /> })),
     ]
   }, [open])
 
   const items = useMemo(() => {
     const pages: PaletteItem[] = NAV.flatMap((g) => g.items.map((i) => ({
-      id: i.path, label: i.label, hint: g.group || '페이지', path: i.path, icon: i.icon, keywords: i.keywords })))
-    const all = [...pages, ...(dynamic.data ?? [])]
+      id: i.path, label: tr(...i.label), hint: g.group ? tr(...g.group) : tr('페이지', 'Page'), path: i.path, icon: i.icon,
+      keywords: `${i.label.join(' ')} ${i.keywords ?? ''}` })))
+    const records: PaletteItem[] = (dynamic.data ?? []).map((d) => ({ id: d.id, label: d.label, path: d.path, icon: d.icon,
+      hint: `${d.kind === 'platform' ? tr('플랫폼', 'Platform') : tr('롤아웃', 'Rollout')} · ${d.detail}` }))
+    const all = [...pages, ...records]
     const q = query.trim().toLowerCase()
     return q ? all.filter((i) => `${i.label} ${i.hint} ${i.keywords ?? ''}`.toLowerCase().includes(q)) : all
-  }, [query, dynamic.data])
+  }, [query, dynamic.data, lang])
 
   useEffect(() => {
     if (open) {
@@ -172,7 +186,7 @@ function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[14vh]">
       <div className="fixed inset-0 animate-fade-in bg-black/40" onClick={onClose} />
-      <div role="dialog" aria-label="명령 팔레트"
+      <div role="dialog" aria-label={tr('명령 팔레트', 'Command palette')}
         className="relative w-full max-w-lg animate-slide-up overflow-hidden rounded-xl border border-line bg-surface shadow-pop">
         <div className="flex items-center gap-2 border-b border-line px-3">
           <Search className="size-4 text-muted" />
@@ -183,12 +197,12 @@ function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void 
               if (e.key === 'Enter') go(items[index])
               if (e.key === 'Escape') onClose()
             }}
-            placeholder="페이지, 플랫폼, 롤아웃 검색…"
+            placeholder={tr('페이지, 플랫폼, 롤아웃 검색…', 'Search pages, platforms, rollouts…')}
             className="h-12 flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-muted" />
           <Kbd>esc</Kbd>
         </div>
         <ul className="scrollbar-thin max-h-80 overflow-y-auto p-1.5">
-          {items.length === 0 && <li className="px-3 py-6 text-center text-muted">일치하는 항목이 없습니다</li>}
+          {items.length === 0 && <li className="px-3 py-6 text-center text-muted">{tr('일치하는 항목이 없습니다', 'No matches')}</li>}
           {items.map((item, i) => (
             <li key={item.id}>
               <button onMouseMove={() => setIndex(i)} onClick={() => go(item)}
