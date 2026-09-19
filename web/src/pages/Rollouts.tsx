@@ -1,14 +1,15 @@
-import { Plus, Rocket, Trash2 } from 'lucide-react'
+import { Plus, Rocket, ShieldAlert, Smartphone, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { PageHeader } from '../components/layout'
 import { Dialog, useToast } from '../components/ui/overlay'
-import { Button, Card, EmptyState, ErrorBanner, Field, Input, Segmented, Select, Switch } from '../components/ui/primitives'
-import { ChannelBadge, RolloutBadge } from '../components/ui/status'
+import { Button, Card, cx, EmptyState, ErrorBanner, Field, Input, Mono, Segmented, Select, Switch } from '../components/ui/primitives'
+import { Badge, ChannelBadge, RolloutBadge } from '../components/ui/status'
 import { DataTable } from '../components/ui/table'
 import { api, type Channel, type RolloutState } from '../lib/api'
-import { relativeTime, shortFingerprint } from '../lib/format'
+import { parseFingerprint, relativeTime, shortFingerprint } from '../lib/format'
 import { navigate, useAsync } from '../lib/hooks'
 import { useT } from '../lib/i18n'
+import { HUE, hueOf, type Hue } from '../lib/palette'
 
 interface StageForm { percent: string; min_soak_hours: string }
 
@@ -17,14 +18,33 @@ const DEFAULT_STAGES: StageForm[] = [
   { percent: '50', min_soak_hours: '24' }, { percent: '100', min_soak_hours: '0' },
 ]
 
+// 단계마다 고유 색 (장식용). 지난 단계는 점 색, 현재 단계는 진하게, 남은 단계는 옅게.
+const STAGE_HUES: Hue[] = ['sky', 'violet', 'fuchsia', 'orange', 'emerald']
+const stageHue = (i: number): Hue => STAGE_HUES[i % STAGE_HUES.length]
+
+/** 지문에서 기기·릴리스·빌드 ID 를 뽑아 같은 값은 항상 같은 색으로 보여준다. */
+function FingerprintBadges({ fingerprint }: { fingerprint: string }) {
+  const f = parseFingerprint(fingerprint)
+  if (!f.release) return <span className="text-ink-2">{shortFingerprint(fingerprint)}</span>
+  return (
+    <span className="flex flex-wrap items-center gap-1.5">
+      <Badge hue={hueOf(f.device)} icon={<Smartphone className="size-3" />}>{f.device}</Badge>
+      <Badge hue={hueOf(`Android ${f.release}`)}>Android {f.release}</Badge>
+      <Mono className="text-ink-2">{f.buildId}</Mono>
+    </span>
+  )
+}
+
 function StageBar({ stages, current }: { stages: { percent: number }[]; current: number }) {
   const t = useT()
   return (
     <div className="flex items-center gap-[2px]" aria-label={t(`단계 ${current}/${stages.length}`, `Stage ${current}/${stages.length}`)}>
-      {stages.map((s, i) => (
-        <span key={i} title={t(`${i + 1}단계 ${s.percent}%`, `Stage ${i + 1} ${s.percent}%`)}
-          className={`h-1.5 w-5 first:rounded-l-full last:rounded-r-full ${i < current ? 'bg-accent' : 'bg-line'}`} />
-      ))}
+      {stages.map((s, i) => {
+        const h = HUE[stageHue(i)]
+        const color = i === current - 1 ? cx(h.solid, 'h-2') : i < current ? cx(h.dot, 'h-1.5') : cx(h.soft, h.ring, 'h-1.5 ring-1 ring-inset')
+        return <span key={i} title={t(`${i + 1}단계 ${s.percent}%`, `Stage ${i + 1} ${s.percent}%`)}
+          className={cx('w-5 first:rounded-l-full last:rounded-r-full', color)} />
+      })}
     </div>
   )
 }
@@ -105,6 +125,7 @@ function CreateRolloutDialog({ open, onClose }: { open: boolean; onClose: () => 
             <Select value={target} onChange={(e) => setTarget(e.target.value)} className="font-mono text-xs">
               {targets.map((p) => <option key={p.post_build} value={p.post_build}>{shortFingerprint(p.post_build)}</option>)}
             </Select>
+            {target && <div className="mt-1.5"><FingerprintBadges fingerprint={target} /></div>}
           </Field>
         </div>
 
@@ -116,8 +137,10 @@ function CreateRolloutDialog({ open, onClose }: { open: boolean; onClose: () => 
           </div>
           <div className="space-y-2">
             {stages.map((s, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <span className="w-12 text-xs text-muted">{t(`${i + 1}단계`, `Stage ${i + 1}`)}</span>
+              <div key={i} className={cx('flex items-center gap-2 rounded-md border-l-4 py-1 pl-2', HUE[stageHue(i)].border, HUE[stageHue(i)].soft)}>
+                <span className={cx('flex w-14 items-center gap-1.5 text-xs font-medium', HUE[stageHue(i)].text)}>
+                  <span aria-hidden className={cx('size-2 shrink-0 rounded-full', HUE[stageHue(i)].dot)} />
+                  {t(`${i + 1}단계`, `Stage ${i + 1}`)}</span>
                 <Input value={s.percent} onChange={(e) => setStage(i, 'percent', e.target.value)} className="w-24 text-right" aria-label={t('비율', 'Percentage')} />
                 <span className="text-xs text-muted">{t('% · 최소 유지', '% · min soak')}</span>
                 <Input value={s.min_soak_hours} onChange={(e) => setStage(i, 'min_soak_hours', e.target.value)} className="w-20 text-right" aria-label={t('유지 시간', 'Soak hours')} />
@@ -130,8 +153,11 @@ function CreateRolloutDialog({ open, onClose }: { open: boolean; onClose: () => 
         </section>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <section className="space-y-3 rounded-lg border border-line p-3">
-            <h3 className="text-xs font-medium text-ink-2">{t('자동 중단', 'Auto-halt')}</h3>
+          <section className={cx('space-y-3 rounded-lg border-l-4 p-3 ring-1 ring-inset ring-line', HUE.rose.border)}>
+            <h3 className="flex items-center gap-2 text-xs font-medium text-ink-2">
+              <span aria-hidden className={cx('flex size-6 items-center justify-center rounded-md ring-1 ring-inset', HUE.rose.soft, HUE.rose.text, HUE.rose.ring)}>
+                <ShieldAlert className="size-3.5" /></span>
+              {t('자동 중단', 'Auto-halt')}</h3>
             <div className="grid grid-cols-3 gap-2">
               <Field label={t('최소 표본', 'Min sample')}><Input value={minSample} onChange={(e) => setMinSample(e.target.value.replace(/\D/g, ''))} /></Field>
               <Field label={t('설치 실패율 %', 'Install failure rate %')}><Input value={maxError} onChange={(e) => setMaxError(e.target.value)} /></Field>
@@ -144,8 +170,11 @@ function CreateRolloutDialog({ open, onClose }: { open: boolean; onClose: () => 
               </Select>
             </Field>
           </section>
-          <section className="space-y-2 rounded-lg border border-line p-3">
-            <h3 className="text-xs font-medium text-ink-2">{t('기기 정책', 'Device policy')}</h3>
+          <section className={cx('space-y-2 rounded-lg border-l-4 p-3 ring-1 ring-inset ring-line', HUE.teal.border)}>
+            <h3 className="flex items-center gap-2 text-xs font-medium text-ink-2">
+              <span aria-hidden className={cx('flex size-6 items-center justify-center rounded-md ring-1 ring-inset', HUE.teal.soft, HUE.teal.text, HUE.teal.ring)}>
+                <Smartphone className="size-3.5" /></span>
+              {t('기기 정책', 'Device policy')}</h3>
             <Switch label={t('비측정 네트워크에서만', 'Unmetered networks only')} checked={unmetered} onChange={setUnmetered} />
             <div className="grid grid-cols-2 gap-2">
               <Field label={t('최소 배터리 %', 'Min battery %')}><Input value={battery} onChange={(e) => setBattery(e.target.value.replace(/\D/g, ''))} /></Field>
@@ -190,12 +219,12 @@ export default function RolloutsPage() {
           columns={[
             { key: 'state', header: t('상태', 'Status'), sort: (r) => r.state, cell: (r) => <RolloutBadge state={r.state} /> },
             { key: 'name', header: t('이름', 'Name'), sort: (r) => r.name, cell: (r) => <span className="font-medium">{r.name}</span> },
-            { key: 'target', header: t('대상', 'Target'), cell: (r) => <span className="text-ink-2">{shortFingerprint(r.target_fingerprint)}</span> },
+            { key: 'target', header: t('대상', 'Target'), cell: (r) => <FingerprintBadges fingerprint={r.target_fingerprint} /> },
             { key: 'channel', header: t('채널', 'Channel'), sort: (r) => r.channel, cell: (r) => <ChannelBadge channel={r.channel} /> },
             { key: 'progress', header: t('진행', 'Progress'), sort: (r) => r.current_percent, cell: (r) => (
               <div className="flex items-center gap-3">
                 <StageBar stages={r.stages} current={r.current_stage} />
-                <span className="tabular text-xs text-ink">{r.current_percent}%</span>
+                <span className={cx('tabular text-xs font-medium', r.current_stage > 0 ? HUE[stageHue(r.current_stage - 1)].text : 'text-ink')}>{r.current_percent}%</span>
               </div>) },
             { key: 'created', header: t('생성', 'Created'), align: 'right', sort: (r) => r.created_at,
               cell: (r) => <span className="text-muted">{relativeTime(r.created_at)}</span> },

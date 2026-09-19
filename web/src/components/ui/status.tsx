@@ -3,6 +3,7 @@ import { AlertOctagon, AlertTriangle, Archive, CheckCircle2, CircleDashed, Circl
 import type { ReactNode } from 'react'
 import type { AssignmentState, OtaPackage, RolloutState, Severity, WorkStatus } from '../../lib/api'
 import { localizedRecord, tr } from '../../lib/i18n'
+import { HUE, hueOf, type Hue } from '../../lib/palette'
 import { cx } from './primitives'
 
 // 상태는 색만으로 전달하지 않는다 — 항상 아이콘 + 라벨 (dataviz 상태 팔레트 규칙)
@@ -17,12 +18,14 @@ const TONES: Record<Tone, string> = {
   neutral: 'bg-line/50 text-ink-2 ring-line',
 }
 
-export function Badge({ tone = 'neutral', icon, children, className }: {
-  tone?: Tone; icon?: ReactNode; children: ReactNode; className?: string
+/** tone 은 상태(성공·경고·위험), hue 는 장식용 색 구분(채널·버스·형식 등). hue 가 있으면 hue 를 쓴다. */
+export function Badge({ tone = 'neutral', hue, icon, children, className }: {
+  tone?: Tone; hue?: Hue; icon?: ReactNode; children: ReactNode; className?: string
 }) {
+  const color = hue ? cx(HUE[hue].soft, HUE[hue].text, HUE[hue].ring) : TONES[tone]
   return (
     <span className={cx('inline-flex h-5 items-center gap-1 whitespace-nowrap rounded-full px-2 text-[11px] font-medium ring-1 ring-inset',
-      TONES[tone], className)}>
+      color, className)}>
       {icon}
       {children}
     </span>
@@ -86,8 +89,10 @@ export const ASSIGNMENT_LABEL: Record<AssignmentState, string> = localizedRecord
   failed: ['설치 실패', 'Install failed'],
 })
 
+const CHANNEL_HUE: Record<string, Hue> = { testing: 'amber', beta: 'violet', stable: 'emerald' }
+
 export function ChannelBadge({ channel }: { channel: string }) {
-  return <Badge icon={<CircleDot className={I} />}>{channel}</Badge>
+  return <Badge hue={CHANNEL_HUE[channel] ?? hueOf(channel)} icon={<CircleDot className={I} />}>{channel}</Badge>
 }
 
 export function RetryIcon() {

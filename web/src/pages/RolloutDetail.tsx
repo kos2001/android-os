@@ -1,14 +1,16 @@
-import { Activity, CheckCircle2, CircleCheckBig, Gauge, OctagonX, Pause, Play, RefreshCw, ShieldCheck, SkipForward, Undo2 } from 'lucide-react'
+import { Activity, BatteryMedium, CheckCircle2, CircleCheckBig, Gauge, Hash, OctagonX, Pause, Play, RefreshCw, RotateCcw, ShieldCheck,
+  SkipForward, Timer, Undo2, Users, Wifi, XCircle } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { BarList, LineChart, SegmentBar } from '../components/charts/charts'
 import { PageHeader, StatTile } from '../components/layout'
 import { ConfirmDialog, useToast } from '../components/ui/overlay'
-import { Button, Card, CardHeader, ErrorBanner, KeyValue, Mono, Segmented, Skeleton } from '../components/ui/primitives'
+import { Button, Card, CardHeader, cx, ErrorBanner, KeyValue, Mono, Segmented, Skeleton } from '../components/ui/primitives'
 import { ASSIGNMENT_LABEL, Badge, ChannelBadge, RolloutBadge } from '../components/ui/status'
 import { api, type AssignmentState, type HaltEvaluation, type Rollout } from '../lib/api'
-import { dateTime, num, pct, relativeTime, shortFingerprint } from '../lib/format'
+import { dateTime, num, parseFingerprint, pct, relativeTime, shortFingerprint } from '../lib/format'
 import { useAsync } from '../lib/hooks'
 import { useT } from '../lib/i18n'
+import { HUE, hueOf, type Hue } from '../lib/palette'
 
 type Action = 'start' | 'promote' | 'pause' | 'resume' | 'halt' | 'complete'
 
@@ -27,6 +29,21 @@ const actionMeta = (t: Translate): Record<Action, ActionMeta> => ({
 const AVAILABLE: Record<Rollout['state'], Action[]> = {
   draft: ['start'], active: ['promote', 'pause', 'halt', 'complete'], paused: ['resume', 'halt', 'complete'],
   halted: ['complete'], completed: [],
+}
+
+// 단계마다 고유 색 (장식용, 롤아웃 목록과 같은 순서)
+const STAGE_HUES: Hue[] = ['sky', 'violet', 'fuchsia', 'orange', 'emerald']
+const stageHue = (seq: number): Hue => STAGE_HUES[(seq - 1 + STAGE_HUES.length) % STAGE_HUES.length]
+
+/** 규칙·정책 항목 이름 앞 색 아이콘 칩 */
+function Chip({ hue, icon, children }: { hue: Hue; icon: ReactNode; children: ReactNode }) {
+  const h = HUE[hue]
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span aria-hidden className={cx('flex size-5 shrink-0 items-center justify-center rounded-md ring-1 ring-inset', h.soft, h.text, h.ring)}>{icon}</span>
+      {children}
+    </span>
+  )
 }
 
 const ASSIGNMENT_COLORS: Record<AssignmentState, string> = {
@@ -53,6 +70,7 @@ export default function RolloutDetailPage({ id }: { id: number }) {
   if (!r) return <div className="space-y-4"><Skeleton className="h-12 w-1/3" /><Skeleton className="h-72" /></div>
 
   const ACTION = actionMeta(t)
+  const fp = parseFingerprint(r.target_fingerprint)
   const w = m?.window
   const errorRate = w && w.attempted ? Object.values(w.failed_by_code).reduce((a, b) => a + b, 0) / w.attempted : null
   const fallbackRate = w && w.installed ? w.boot_fallback / w.installed : null
@@ -77,7 +95,9 @@ export default function RolloutDetailPage({ id }: { id: number }) {
       <PageHeader
         title={r.name}
         description={shortFingerprint(r.target_fingerprint)}
-        meta={<><RolloutBadge state={r.state} /><ChannelBadge channel={r.channel} /><Badge>{r.device}</Badge>
+        meta={<><RolloutBadge state={r.state} /><ChannelBadge channel={r.channel} /><Badge hue={hueOf(r.device)}>{r.device}</Badge>
+          {fp.release && <Badge hue={hueOf(`Android ${fp.release}`)}>Android {fp.release}</Badge>}
+          {fp.release && <Badge hue={hueOf(fp.buildId)}><span className="font-mono">{fp.buildId}</span></Badge>}
           <span className="text-xs text-muted">{r.created_by} · {relativeTime(r.created_at)}</span></>}
         actions={<>
           <Button variant="ghost" icon={<RefreshCw className="size-3.5" />} onClick={reload}>{t('새로고침', 'Refresh')}</Button>
@@ -98,7 +118,8 @@ export default function RolloutDetailPage({ id }: { id: number }) {
       <Card className="mb-4">
         <div className="p-4">
           <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-[13px] font-semibold text-ink">{t('배포 단계', 'Stages')}</p>
+            <p className="flex items-center gap-2 text-[13px] font-semibold text-ink">
+              <span aria-hidden className={cx('size-2 rounded-full', HUE.orange.dot)} />{t('배포 단계', 'Stages')}</p>
             <p className="text-xs text-muted">
               {t('현재', 'Current')} <b className="tabular text-ink">{r.current_percent}%</b>
               {nextStage && soakUntil && t(
@@ -111,14 +132,19 @@ export default function RolloutDetailPage({ id }: { id: number }) {
             {r.stages.map((s) => {
               const done = s.seq < r.current_stage
               const current = s.seq === r.current_stage
+              const h = HUE[stageHue(s.seq)]
               return (
-                <li key={s.seq} className={`rounded-md border px-3 py-2.5 ${current ? 'border-accent bg-accent/5' : 'border-line'}`}>
+                <li key={s.seq} className={cx('relative overflow-hidden rounded-md px-3 py-2.5 ring-inset',
+                  current ? cx(h.soft, h.ring, 'ring-2') : cx('ring-1 ring-line', done && h.soft))}>
+                  <div aria-hidden className={cx('absolute inset-x-0 top-0', current ? cx(h.solid, 'h-1.5') : done ? cx(h.dot, 'h-1') : cx(h.soft, 'h-1'))} />
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted">{t(`${s.seq}단계`, `Stage ${s.seq}`)}</span>
+                    <span className={cx('flex items-center gap-1.5 text-xs font-medium', h.text)}>
+                      <span aria-hidden className={cx('size-2 rounded-full', current || done ? h.dot : cx(h.soft, 'ring-1 ring-inset', h.ring))} />
+                      {t(`${s.seq}단계`, `Stage ${s.seq}`)}</span>
                     {done && <CheckCircle2 className="size-3.5 text-good" />}
-                    {current && <Activity className="size-3.5 text-accent-ink" />}
+                    {current && <Activity className={cx('size-3.5', h.text)} />}
                   </div>
-                  <p className="tabular mt-1 text-lg font-semibold text-ink">{s.percent}%</p>
+                  <p className={cx('tabular mt-1 text-lg font-semibold', current ? h.text : 'text-ink')}>{s.percent}%</p>
                   <p className="text-[11px] text-muted">
                     {s.promoted_at ? `${relativeTime(s.promoted_at)} · ${s.promoted_by}` : t(`최소 ${s.min_soak_hours}시간 유지`, `Soak at least ${s.min_soak_hours}h`)}
                   </p>
@@ -130,12 +156,12 @@ export default function RolloutDetailPage({ id }: { id: number }) {
       </Card>
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile icon={<Gauge className="size-3.5" />} label={t('설치 시도', 'Install attempts')} value={w ? num(w.attempted) : '—'} sub={t('attempt 단위', 'Per attempt')} />
-        <StatTile icon={<ShieldCheck className="size-3.5" />} label={t('부팅 판정', 'Boot verdicts')} value={w ? num(w.installed) : '—'}
+        <StatTile hue="indigo" icon={<Gauge className="size-3.5" />} label={t('설치 시도', 'Install attempts')} value={w ? num(w.attempted) : '—'} sub={t('attempt 단위', 'Per attempt')} />
+        <StatTile hue="teal" icon={<ShieldCheck className="size-3.5" />} label={t('부팅 판정', 'Boot verdicts')} value={w ? num(w.installed) : '—'}
           sub={w?.attempted ? t(`시도 대비 ${pct(w.installed / w.attempted)}`, `${pct(w.installed / w.attempted)} of attempts`) : undefined} />
-        <StatTile icon={<OctagonX className="size-3.5" />} label={t('설치 실패율', 'Install failure rate')} value={pct(errorRate)}
+        <StatTile hue="rose" icon={<OctagonX className="size-3.5" />} label={t('설치 실패율', 'Install failure rate')} value={pct(errorRate)}
           sub={r.halt_rules.max_error_rate != null ? t(`중단 기준 ${pct(r.halt_rules.max_error_rate)}`, `Halt threshold ${pct(r.halt_rules.max_error_rate)}`) : t('기준 없음', 'No threshold')} />
-        <StatTile icon={<Undo2 className="size-3.5" />} label={t('부팅 폴백률', 'Boot fallback rate')} value={pct(fallbackRate)}
+        <StatTile hue="amber" icon={<Undo2 className="size-3.5" />} label={t('부팅 폴백률', 'Boot fallback rate')} value={pct(fallbackRate)}
           sub={r.halt_rules.max_boot_fallback_rate != null ? t(`중단 기준 ${pct(r.halt_rules.max_boot_fallback_rate)}`, `Halt threshold ${pct(r.halt_rules.max_boot_fallback_rate)}`) : t('기준 없음', 'No threshold')} />
       </div>
 
@@ -163,7 +189,7 @@ export default function RolloutDetailPage({ id }: { id: number }) {
           </div>
         </Card>
         <Card>
-          <CardHeader title={t('기기 상태', 'Device status')} description={t('assignment 현재 상태', 'Current assignment state')} />
+          <CardHeader hue="cyan" title={t('기기 상태', 'Device status')} description={t('assignment 현재 상태', 'Current assignment state')} />
           <div className="p-4">
             {m ? (
               <SegmentBar segments={(Object.keys(ASSIGNMENT_LABEL) as AssignmentState[]).map((s) => ({
@@ -180,23 +206,26 @@ export default function RolloutDetailPage({ id }: { id: number }) {
               valueLabel={t('기기 수', 'Devices')}
               items={(m?.errors ?? []).map((e) => ({
                 key: String(e.code), value: e.devices, hint: `ErrorCode ${e.code}`,
-                label: <span><Mono className="text-muted">{e.code}</Mono> {e.name}</span>,
+                label: <span className="inline-flex items-center gap-1.5">
+                  <Mono className={cx('rounded px-1 ring-1 ring-inset', HUE[hueOf(String(e.code))].soft, HUE[hueOf(String(e.code))].text, HUE[hueOf(String(e.code))].ring)}>{e.code}</Mono>
+                  {e.name}</span>,
               }))}
               empty={<p className="py-8 text-center text-xs text-muted">{t('기록된 설치 실패가 없습니다', 'No install failures recorded')}</p>}
             />
           </div>
         </Card>
         <Card>
-          <CardHeader title={t('자동 중단 규칙', 'Auto-halt rules')} actions={
+          <CardHeader hue="rose" title={t('자동 중단 규칙', 'Auto-halt rules')} actions={
             <Button size="sm" loading={evaluating} onClick={evaluate}>{t('지금 평가', 'Evaluate now')}</Button>} />
           <div className="space-y-4 p-4">
             <KeyValue items={[
-              [t('최소 표본', 'Min sample'), num(r.halt_rules.min_sample)],
-              [t('설치 실패율', 'Install failure rate'), r.halt_rules.max_error_rate != null ? `> ${pct(r.halt_rules.max_error_rate)}` : '—'],
-              [t('부팅 폴백률', 'Boot fallback rate'), r.halt_rules.max_boot_fallback_rate != null ? `> ${pct(r.halt_rules.max_boot_fallback_rate)}` : '—'],
-              [t('오류 코드별', 'Per error code'), Object.keys(r.halt_rules.max_error_code_rate).length
-                ? Object.entries(r.halt_rules.max_error_code_rate).map(([c, v]) => `${c}: > ${pct(v)}`).join(', ') : '—'],
-              [t('중단 시', 'On halt'), r.halt_mode === 'stop_new' ? t('신규 할당만 중단', 'Stop new assignments only') : t('진행 중 기기도 중단', 'Also stop in-progress devices')],
+              [<Chip hue="indigo" icon={<Users className="size-3" />}>{t('최소 표본', 'Min sample')}</Chip>, num(r.halt_rules.min_sample)],
+              [<Chip hue="rose" icon={<XCircle className="size-3" />}>{t('설치 실패율', 'Install failure rate')}</Chip>, r.halt_rules.max_error_rate != null ? `> ${pct(r.halt_rules.max_error_rate)}` : '—'],
+              [<Chip hue="amber" icon={<Undo2 className="size-3" />}>{t('부팅 폴백률', 'Boot fallback rate')}</Chip>, r.halt_rules.max_boot_fallback_rate != null ? `> ${pct(r.halt_rules.max_boot_fallback_rate)}` : '—'],
+              [<Chip hue="fuchsia" icon={<Hash className="size-3" />}>{t('오류 코드별', 'Per error code')}</Chip>, Object.keys(r.halt_rules.max_error_code_rate).length
+                ? <span className="flex flex-wrap gap-1">{Object.entries(r.halt_rules.max_error_code_rate).map(([c, v]) => (
+                  <Badge key={c} hue={hueOf(c)}><span className="font-mono">{c}</span>: &gt; {pct(v)}</Badge>))}</span> : '—'],
+              [<Chip hue="orange" icon={<OctagonX className="size-3" />}>{t('중단 시', 'On halt')}</Chip>, r.halt_mode === 'stop_new' ? t('신규 할당만 중단', 'Stop new assignments only') : t('진행 중 기기도 중단', 'Also stop in-progress devices')],
             ]} />
             {evaluation && (
               <div className={`rounded-md border px-3 py-2.5 text-xs ${evaluation.halt ? 'border-critical/30 bg-critical/5' : 'border-good/30 bg-good/5'}`}>
@@ -207,12 +236,13 @@ export default function RolloutDetailPage({ id }: { id: number }) {
             )}
           </div>
           <div className="border-t border-line p-4">
-            <p className="mb-2 text-xs font-medium text-muted">{t('기기 정책', 'Device policy')}</p>
+            <p className="mb-2 flex items-center gap-2 text-xs font-medium text-muted">
+              <span aria-hidden className={cx('size-2 rounded-full', HUE.teal.dot)} />{t('기기 정책', 'Device policy')}</p>
             <KeyValue items={[
-              [t('네트워크', 'Network'), r.policy.require_unmetered ? t('비측정 네트워크만', 'Unmetered only') : t('제한 없음', 'Any')],
-              [t('최소 배터리', 'Min battery'), `${r.policy.min_battery_pct}%`],
-              [t('최대 시도', 'Max attempts'), t(`${r.policy.max_attempts}회`, `${r.policy.max_attempts}`)],
-              [t('체크 주기', 'Check interval'), t(`${Math.round(r.policy.check_interval_s / 3600)}시간 ±10%`, `${Math.round(r.policy.check_interval_s / 3600)}h ±10%`)],
+              [<Chip hue="sky" icon={<Wifi className="size-3" />}>{t('네트워크', 'Network')}</Chip>, r.policy.require_unmetered ? t('비측정 네트워크만', 'Unmetered only') : t('제한 없음', 'Any')],
+              [<Chip hue="lime" icon={<BatteryMedium className="size-3" />}>{t('최소 배터리', 'Min battery')}</Chip>, `${r.policy.min_battery_pct}%`],
+              [<Chip hue="violet" icon={<RotateCcw className="size-3" />}>{t('최대 시도', 'Max attempts')}</Chip>, t(`${r.policy.max_attempts}회`, `${r.policy.max_attempts}`)],
+              [<Chip hue="teal" icon={<Timer className="size-3" />}>{t('체크 주기', 'Check interval')}</Chip>, t(`${Math.round(r.policy.check_interval_s / 3600)}시간 ±10%`, `${Math.round(r.policy.check_interval_s / 3600)}h ±10%`)],
             ]} />
           </div>
         </Card>

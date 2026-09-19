@@ -2,15 +2,48 @@ import { ScrollText } from 'lucide-react'
 import { useState } from 'react'
 import { PageHeader } from '../components/layout'
 import { Drawer } from '../components/ui/overlay'
-import { Card, EmptyState, ErrorBanner, KeyValue, Mono, Segmented } from '../components/ui/primitives'
+import { Card, cx, EmptyState, ErrorBanner, KeyValue, Segmented } from '../components/ui/primitives'
 import { Badge } from '../components/ui/status'
 import { DataTable } from '../components/ui/table'
 import { api, type AuditEntry } from '../lib/api'
 import { dateTime, relativeTime } from '../lib/format'
 import { useAsync } from '../lib/hooks'
 import { useT } from '../lib/i18n'
+import { HUE, hueOf, type Hue } from '../lib/palette'
 
 const ENTITIES = ['all', 'platform', 'readiness_run', 'work_item', 'fcm_matrix', 'ota_package', 'rollout'] as const
+
+// 장식용 색 구분 — 뜻이 비슷한 동작은 비슷한 색 (생성=초록, 업로드=보라 계열, 롤아웃 진행=파랑 계열). halt 는 상태 톤(critical)을 그대로 쓴다.
+const ACTION_HUE: Record<string, Hue> = {
+  create: 'emerald', register: 'teal', update: 'sky', retire: 'slate',
+  upload_manifest: 'indigo', upload_kernel: 'violet', upload_symbol_list: 'purple', upload_matrix: 'fuchsia',
+  start: 'cyan', promote: 'blue', pause: 'amber', resume: 'lime', complete: 'emerald',
+}
+const ENTITY_HUE: Record<string, Hue> = {
+  platform: 'indigo', readiness_run: 'teal', work_item: 'amber', fcm_matrix: 'fuchsia',
+  ota_package: 'emerald', rollout: 'orange', kmi_symbol_list: 'purple',
+}
+const actionHue = (a: string) => ACTION_HUE[a] ?? hueOf(a)
+const entityHue = (e: string) => ENTITY_HUE[e] ?? hueOf(e)
+
+function ActionBadge({ action }: { action: string }) {
+  return action === 'halt' ? <Badge tone="critical">{action}</Badge> : <Badge hue={actionHue(action)}>{action}</Badge>
+}
+
+function EntityBadge({ entity, id }: { entity: string; id?: number | null }) {
+  return <Badge hue={entityHue(entity)} className="font-mono">{entity}{id != null ? ` #${id}` : ''}</Badge>
+}
+
+function Actor({ name }: { name: string }) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span aria-hidden className={cx('flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold uppercase text-white', HUE[hueOf(name)].solid)}>
+        {name.charAt(0) || '?'}
+      </span>
+      <span className="font-medium">{name}</span>
+    </span>
+  )
+}
 
 function pretty(json: string | null) {
   if (!json) return '—'
@@ -39,13 +72,15 @@ export default function AuditPage() {
           onRowClick={setSelected}
           searchText={(a) => `${a.actor} ${a.action} ${a.entity} ${a.after ?? ''}`}
           searchPlaceholder={t('행위자, 동작, 내용 검색', 'Search actor, action, details')}
-          toolbar={<Segmented value={entity} onChange={setEntity} items={ENTITIES.map((e) => ({ value: e, label: e === 'all' ? t('전체', 'All') : e }))} />}
+          toolbar={<Segmented value={entity} onChange={setEntity} items={ENTITIES.map((e) => ({ value: e, label: e === 'all' ? t('전체', 'All') : (
+            <span className="inline-flex items-center gap-1.5"><span aria-hidden className={cx('size-1.5 rounded-full', HUE[entityHue(e)].dot)} />{e}</span>
+          ) }))} />}
           empty={<EmptyState icon={<ScrollText className="size-5" />} title={t('기록이 없습니다', 'No records')} />}
           columns={[
             { key: 'at', header: t('시각', 'Time'), sort: (a) => a.at, cell: (a) => <span title={dateTime(a.at)} className="text-ink-2">{relativeTime(a.at)}</span> },
-            { key: 'actor', header: t('행위자', 'Actor'), sort: (a) => a.actor, cell: (a) => <span className="font-medium">{a.actor}</span> },
-            { key: 'action', header: t('동작', 'Action'), sort: (a) => a.action, cell: (a) => <Badge tone={a.action === 'halt' ? 'critical' : 'neutral'}>{a.action}</Badge> },
-            { key: 'entity', header: t('대상', 'Target'), cell: (a) => <Mono>{a.entity}{a.entity_id != null ? ` #${a.entity_id}` : ''}</Mono> },
+            { key: 'actor', header: t('행위자', 'Actor'), sort: (a) => a.actor, cell: (a) => <Actor name={a.actor} /> },
+            { key: 'action', header: t('동작', 'Action'), sort: (a) => a.action, cell: (a) => <ActionBadge action={a.action} /> },
+            { key: 'entity', header: t('대상', 'Target'), cell: (a) => <EntityBadge entity={a.entity} id={a.entity_id} /> },
             { key: 'summary', header: t('내용', 'Details'), cell: (a) => <span className="line-clamp-1 max-w-md text-xs text-muted">{a.after ?? ''}</span> },
           ]}
         />
@@ -54,7 +89,8 @@ export default function AuditPage() {
         subtitle={selected && `${selected.actor} · ${dateTime(selected.at)}`}>
         {selected && (
           <div className="space-y-4">
-            <KeyValue items={[['ID', selected.id], [t('대상', 'Target'), `${selected.entity} #${selected.entity_id ?? '—'}`]]} />
+            <KeyValue items={[['ID', selected.id], [t('행위자', 'Actor'), <Actor name={selected.actor} />], [t('동작', 'Action'), <ActionBadge action={selected.action} />],
+              [t('대상', 'Target'), <EntityBadge entity={selected.entity} id={selected.entity_id} />]]} />
             {(['before', 'after'] as const).map((k) => (
               <section key={k}>
                 <h3 className="mb-2 text-xs font-medium text-muted">{k === 'before' ? t('변경 전', 'Before') : t('변경 후', 'After')}</h3>
