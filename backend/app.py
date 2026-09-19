@@ -11,6 +11,12 @@ API (docs/design/04-api-spec.md §2 의 부분집합):
   POST  /admin/v1/platforms/{id}/readiness-runs     {target_release, as_of?}
   GET   /admin/v1/platforms/{id}/readiness-runs
   GET   /admin/v1/readiness-runs/{id}
+  PUT   /admin/v1/platforms/{id}/kernel             uname -r · kernel .config(.gz) · vendor .ko (multipart, 부분 교체)
+  GET   /admin/v1/platforms/{id}/kernel
+  GET   /admin/v1/platforms/{id}/kernel/uprev       ?target_release=17 — uprev 후보·권장 브랜치
+  GET   /admin/v1/platforms/{id}/drivers           ?kernel_branch= — 커널 드라이버(.ko)·HAL 서브시스템별 인벤토리
+  PUT   /admin/v1/kernel/symbol-lists/{branch}     KMI symbol list(abi_gki_aarch64*) 업로드
+  GET   /admin/v1/kernel/symbol-lists
   PATCH /admin/v1/work-items/{id}
   POST  /admin/v1/matrices                          framework compatibility matrix 업로드 (release + file)
   GET   /admin/v1/matrices
@@ -40,7 +46,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from upgrade_core import __version__
-from upgrade_core.readiness import PlatformProfile, evaluate, load_kb, release_key
+from upgrade_core.drivers import build_inventory
+from upgrade_core.kernel import (BRANCH_RE, KernelArtifactError, KernelModule, config_hints, inspect_module,
+                                 check_modules, parse_kconfig, parse_kernel_release, parse_symbol_list,
+                                 read_config_bytes, recommended_uprev, uprev_candidates)
+from upgrade_core.readiness import PlatformProfile, evaluate, load_kb, release_entry, release_key
 from upgrade_core.vintf import VintfError, diff_matrices, parse_manifest, parse_matrix
 
 from .auth import ANY, ENGINEER, Principal, parse_api_keys, parse_device_keys, require
@@ -50,6 +60,10 @@ from .store import Conflict, NotFound, Store
 
 log = logging.getLogger("android_os")
 MAX_XML_BYTES = 2 * 1024 * 1024
+MAX_MODULE_BYTES = 64 * 1024 * 1024
+MAX_MODULES = 1000
+MAX_CONFIG_UPLOAD_BYTES = 4 * 1024 * 1024
+MAX_SYMBOL_LIST_BYTES = 8 * 1024 * 1024
 
 
 # --------------------------------------------------------------------------- #
@@ -71,6 +85,9 @@ class PlatformIn(BaseModel):
 class RunIn(BaseModel):
     target_release: str = Field(examples=["17"])
     as_of: date | None = None
+    # 커널 uprev 후를 기준으로 판정할 때의 목표 브랜치 (없으면 현재 커널)
+    target_kernel_branch: str | None = Field(default=None, pattern=r"^android\d+-\d+\.\d+$",
+                                             examples=["android17-6.18"])
 
 
 class WorkItemPatch(BaseModel):
@@ -136,6 +153,11 @@ def create_app(store: Store | None = None, api_keys: str | None = None, package_
     def _vintf(_: Request, exc: VintfError):
         return JSONResponse(status_code=422, content={"error": {"code": "INVALID_VINTF", "message": str(exc)}})
 
+    @app.exception_handler(KernelArtifactError)
+    def _kernel(_: Request, exc: KernelArtifactError):
+        return JSONResponse(status_code=422, content={"error": {"code": "INVALID_KERNEL_ARTIFACT",
+                                                                "message": str(exc)}})
+
     @app.get("/api/health")
     def health():
         return {"status": "ok", "version": __version__, "kb_version": load_kb()["kb_version"]}
@@ -178,6 +200,123 @@ def create_app(store: Store | None = None, api_keys: str | None = None, package_
         return {"platform": platform, "hal_instances_by_format": by_format,
                 "hals": sorted({h.fqname for h in manifest.hals})}
 
+    # ------------------------------------------------------------------ kernel
+    @app.put("/admin/v1/platforms/{pid}/kernel")
+    async def upload_kernel(pid: int, kernel_release: str | None = Form(default=None),
+                            config: UploadFile | None = File(default=None),
+                            modules: list[UploadFile] | None = File(default=None),
+                            who: Principal = Depends(ENGINEER), store: Store = Depends(db)):
+        platform = store.get_platform(pid)
+        changes: dict = {}
+        profile_updates: dict = {}
+        if kernel_release:
+            release = parse_kernel_release(kernel_release)
+            if release.branch != platform["kernel_branch"]:
+                raise HTTPException(422, f"kernel release {release.raw} is branch {release.branch}, "
+                                         f"platform is {platform['kernel_branch']}")
+            changes |= {"kernel_release": release.raw, "kmi_generation": release.kmi_generation}
+        hints = None
+        if config is not None:
+            options = parse_kconfig(read_config_bytes(await _read_limited(config, MAX_CONFIG_UPLOAD_BYTES)))
+            hints = config_hints(options)
+            changes["config"] = options
+            # ION 은 커널 지원 없이 쓸 수 없으므로 양방향 반영. 16KB 는 출하 config 가 4K 여도 16K 빌드
+            # 변형이 있을 수 있어 켜진 경우만 반영한다.
+            profile_updates = {"uses_ion": hints["uses_ion"]}
+            if hints["supports_16kb"]:
+                profile_updates["supports_16kb"] = True
+        if modules:
+            if len(modules) > MAX_MODULES:
+                raise HTTPException(413, f"at most {MAX_MODULES} modules per upload")
+            parsed = [inspect_module(await _read_limited(m, MAX_MODULE_BYTES), m.filename or "module.ko")
+                      for m in modules]
+            changes["modules"] = [m.to_dict() for m in parsed]
+        if not changes:
+            raise HTTPException(422, "provide kernel_release, config and/or modules")
+        saved = store.save_kernel(pid, changes, profile_updates, who.actor)
+        return {"platform": saved, "config_hints": hints, **_kernel_view(store.kernel_artifacts(pid))}
+
+    @app.get("/admin/v1/platforms/{pid}/kernel")
+    def get_kernel(pid: int, _: Principal = Depends(ANY), store: Store = Depends(db)):
+        store.get_platform(pid)
+        artifacts = store.kernel_artifacts(pid)
+        if artifacts is None:
+            raise NotFound("platform_kernel")
+        return _kernel_view(artifacts)
+
+    @app.get("/admin/v1/platforms/{pid}/kernel/uprev")
+    def kernel_uprev(pid: int, target_release: str, as_of: date | None = None, _: Principal = Depends(ANY),
+                     store: Store = Depends(db)):
+        platform = store.get_platform(pid)
+        _check_release(target_release)
+        kb = load_kb()
+        try:
+            target = release_entry(kb, target_release)
+        except KeyError as exc:
+            raise HTTPException(422, str(exc.args[0])) from exc
+        support_until = date.fromisoformat(platform["support_until"]) if platform["support_until"] else None
+        try:
+            candidates = uprev_candidates(kb, target, platform["kernel_branch"], as_of or date.today(), support_until)
+        except KeyError as exc:
+            raise HTTPException(422, f"kernel branch {exc.args[0]} missing from knowledge base") from exc
+        symbol_lists = {s["branch"] for s in store.list_symbol_lists()}
+        for c in candidates:
+            c["symbol_list_uploaded"] = c["branch"] in symbol_lists
+        best = recommended_uprev(candidates)
+        return {"current_branch": platform["kernel_branch"], "target_release": target_release,
+                "support_until": platform["support_until"], "candidates": candidates,
+                "recommended": best["branch"] if best else None}
+
+    @app.get("/admin/v1/platforms/{pid}/drivers")
+    def drivers(pid: int, kernel_branch: str | None = None, _: Principal = Depends(ANY), store: Store = Depends(db)):
+        platform = store.get_platform(pid)
+        branch = kernel_branch or platform["kernel_branch"]
+        if not BRANCH_RE.match(branch):
+            raise HTTPException(422, f"bad kernel branch {branch!r} (expected androidNN-X.Y)")
+        artifacts = store.kernel_artifacts(pid)
+        modules = [KernelModule.from_dict(m) for m in artifacts["modules"]] if artifacts else []
+        documents = store.manifest_documents(pid)
+        hals = parse_manifest(*(d["xml"] for d in documents)).hals if documents else []
+        inventory = build_inventory(modules, hals)
+        symbols = store.symbol_list(branch) if modules else None
+        missing_by_module: dict[str, list[str]] = {}
+        if symbols is not None:
+            for sym, users in check_modules(modules, symbols, branch).missing.items():
+                for user in users:
+                    missing_by_module.setdefault(user, []).append(sym)
+        for group in inventory["subsystems"]:
+            for entry in group["kernel"]:
+                missing = sorted(missing_by_module.get(entry["name"], []))
+                entry["kmi_missing"] = None if symbols is None else len(missing)
+                entry["kmi_missing_symbols"] = missing[:50]
+        return {**inventory, "kernel_branch": branch, "kmi_checked": symbols is not None,
+                "has_modules": bool(modules), "has_manifest": bool(documents)}
+
+    @app.put("/admin/v1/kernel/symbol-lists/{branch}", status_code=201)
+    async def upload_symbol_list(branch: str, files: list[UploadFile] = File(...),
+                                 source: str | None = Form(default=None), who: Principal = Depends(ENGINEER),
+                                 store: Store = Depends(db)):
+        if not BRANCH_RE.match(branch):
+            raise HTTPException(422, f"bad kernel branch {branch!r} (expected androidNN-X.Y)")
+        symbols: set[str] = set()
+        for f in files:
+            data = await _read_limited(f, MAX_SYMBOL_LIST_BYTES)
+            try:
+                text = data.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise HTTPException(422, f"{f.filename}: not UTF-8") from exc
+            try:
+                symbols |= parse_symbol_list(text)
+            except KernelArtifactError as exc:
+                raise KernelArtifactError(f"{f.filename}: {exc}") from exc
+        if not symbols:
+            raise KernelArtifactError("symbol lists contain no symbols")
+        return store.save_symbol_list(branch, symbols, [f.filename or "" for f in files], source, who.actor)
+
+    @app.get("/admin/v1/kernel/symbol-lists")
+    def list_symbol_lists(_: Principal = Depends(ANY), store: Store = Depends(db)):
+        return store.list_symbol_lists()
+
     # ------------------------------------------------------------------ readiness
     @app.post("/admin/v1/platforms/{pid}/readiness-runs", status_code=201)
     def create_run(pid: int, body: RunIn, who: Principal = Depends(ENGINEER), store: Store = Depends(db)):
@@ -201,12 +340,23 @@ def create_app(store: Store | None = None, api_keys: str | None = None, package_
                 hal_check = f"included: matrix level {level}"
             else:
                 hal_check = f"skipped: no framework matrix level {level} uploaded for release {body.target_release}"
+        kernel_branch = body.target_kernel_branch or platform["kernel_branch"]
+        artifacts = store.kernel_artifacts(pid)
+        modules = [KernelModule.from_dict(m) for m in artifacts["modules"]] if artifacts else []
+        symbols = store.symbol_list(kernel_branch) if modules else None
+        if not modules:
+            kmi_check = "skipped: no vendor modules uploaded"
+        elif symbols is None:
+            kmi_check = f"skipped: no KMI symbol list uploaded for {kernel_branch}"
+        else:
+            kmi_check = f"included: {len(modules)} modules vs {kernel_branch} ({len(symbols)} symbols)"
         try:
             summary = evaluate(profile, body.target_release, body.as_of or date.today(),
-                               manifest=manifest, target_matrix=matrix)
+                               manifest=manifest, target_matrix=matrix, target_kernel_branch=body.target_kernel_branch,
+                               kernel_modules=modules or None, kmi_symbols=symbols)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
-        return {**store.save_run(pid, summary, who.actor), "hal_check": hal_check}
+        return {**store.save_run(pid, summary, who.actor), "hal_check": hal_check, "kmi_check": kmi_check}
 
     @app.get("/admin/v1/platforms/{pid}/readiness-runs")
     def list_runs(pid: int, _: Principal = Depends(ANY), store: Store = Depends(db)):
@@ -299,6 +449,27 @@ async def _read_xml(upload: UploadFile) -> str:
         return data.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise HTTPException(422, f"{upload.filename}: not UTF-8") from exc
+
+
+async def _read_limited(upload: UploadFile, limit: int) -> bytes:
+    data = await upload.read(limit + 1)
+    if len(data) > limit:
+        raise HTTPException(413, f"{upload.filename}: larger than {limit} bytes")
+    return data
+
+
+def _kernel_view(artifacts: dict) -> dict:
+    """저장된 커널 산출물의 요약 (심볼 목록 전체 대신 개수)."""
+    config = artifacts["config"]
+    return {
+        "kernel_release": artifacts["kernel_release"],
+        "kmi_generation": artifacts["kmi_generation"],
+        "config": None if config is None else {"option_count": len(config), "hints": config_hints(config)},
+        "modules": [{"filename": m["filename"], "name": m["name"], "vermagic": m["vermagic"],
+                     "license": m["license"], "depends": m["depends"], "undefined_count": len(m["undefined"]),
+                     "export_count": len(m["exports"])} for m in artifacts["modules"]],
+        "uploaded_at": artifacts["uploaded_at"],
+    }
 
 
 def _matrix_for(store: Store, release: str, level: str) -> str | None:

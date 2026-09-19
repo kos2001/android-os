@@ -2,6 +2,7 @@ import { Table2, TrendingUp } from 'lucide-react'
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { num } from '../../lib/format'
 import { Button, cx } from '../ui/primitives'
+import { tr } from '../../lib/i18n'
 
 // 차트 규칙 (dataviz): 선 2px · 마커 r≥4 + 표면색 2px 링 · 막대 ≤24px, 데이터 끝 4px 라운드 · 헤어라인 그리드 ·
 // 2개 이상 시리즈는 범례 + 끝 직접 라벨 · 텍스트는 잉크 토큰 · 호버 툴팁 · 표 보기 제공
@@ -61,8 +62,8 @@ function ChartFrame({ title, subtitle, legend, table, children }: {
           {legend}
           <Button size="sm" variant="ghost" onClick={() => setAsTable(!asTable)}
             icon={asTable ? <TrendingUp className="size-3.5" /> : <Table2 className="size-3.5" />}
-            aria-label={asTable ? '차트로 보기' : '표로 보기'}>
-            {asTable ? '차트' : '표'}
+            aria-label={asTable ? tr('차트로 보기', 'Show chart') : tr('표로 보기', 'Show table')}>
+            {asTable ? tr('차트', 'Chart') : tr('표', 'Table')}
           </Button>
         </div>
       </figcaption>
@@ -108,7 +109,7 @@ export function LineChart<T extends object>({ data, x, series, title, subtitle, 
   const table = (
     <table className="w-full text-xs">
       <thead className="sticky top-0 bg-surface"><tr className="border-b border-line text-muted">
-        <th className="px-3 py-2 text-left font-medium">시간</th>
+        <th className="px-3 py-2 text-left font-medium">{tr('시간', 'Time')}</th>
         {series.map((s) => <th key={s.key} className="px-3 py-2 text-right font-medium">{s.label}</th>)}
       </tr></thead>
       <tbody>{data.map((d, i) => (
@@ -191,7 +192,7 @@ export function BarList({ items, title, subtitle, valueLabel, empty }: {
   const table = (
     <table className="w-full text-xs">
       <thead><tr className="border-b border-line text-muted">
-        <th className="px-3 py-2 text-left font-medium">항목</th><th className="px-3 py-2 text-right font-medium">{valueLabel}</th>
+        <th className="px-3 py-2 text-left font-medium">{tr('항목', 'Item')}</th><th className="px-3 py-2 text-right font-medium">{valueLabel}</th>
       </tr></thead>
       <tbody>{items.map((i) => (
         <tr key={i.key} className="border-b border-line last:border-0">
@@ -287,7 +288,7 @@ export function RangeTimeline({ rows, title, subtitle, today }: {
   const table = (
     <table className="w-full text-xs">
       <thead><tr className="border-b border-line text-muted">
-        <th className="px-3 py-2 text-left font-medium">브랜치</th><th className="px-3 py-2 text-left font-medium">출시</th>
+        <th className="px-3 py-2 text-left font-medium">{tr('브랜치', 'Branch')}</th><th className="px-3 py-2 text-left font-medium">{tr('출시', 'Launch')}</th>
         <th className="px-3 py-2 text-left font-medium">EOL</th>
       </tr></thead>
       <tbody>{rows.map((r) => (
@@ -328,7 +329,7 @@ export function RangeTimeline({ rows, title, subtitle, today }: {
               )
             })}
             <line x1={xAt(today.getTime())} x2={xAt(today.getTime())} y1={top - 2} y2={height - 18} stroke="rgb(var(--ink))" strokeWidth={1} />
-            <text x={xAt(today.getTime())} y={9} textAnchor="middle" className="fill-ink text-[10px] font-semibold">오늘</text>
+            <text x={xAt(today.getTime())} y={9} textAnchor="middle" className="fill-ink text-[10px] font-semibold">{tr('오늘', 'Today')}</text>
           </svg>
         )}
         {hover && (() => {

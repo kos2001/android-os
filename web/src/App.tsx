@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
 import { AppShell, Breadcrumbs, NAV } from './components/layout'
 import { useRoute } from './lib/hooks'
+import { tr, useLang } from './lib/i18n'
+import AboutPage from './pages/About'
 import AuditPage from './pages/Audit'
 import DeltaPage from './pages/Delta'
 import KnowledgePage from './pages/Knowledge'
@@ -14,11 +16,13 @@ import SettingsPage from './pages/Settings'
 import VintfPage from './pages/Vintf'
 
 function labelOf(path: string): string {
-  return NAV.flatMap((g) => g.items).find((i) => i.path === path)?.label ?? path
+  const label = NAV.flatMap((g) => g.items).find((i) => i.path === path)?.label
+  return label ? tr(...label) : path
 }
 
 export default function App() {
   const { segments } = useRoute()
+  useLang() // 언어가 바뀌면 전체 트리를 다시 렌더한다
   const [section, id] = segments
   const base = `/${section ?? 'overview'}`
   const numericId = id ? Number(id) : NaN
@@ -35,6 +39,7 @@ export default function App() {
       page = Number.isFinite(numericId) ? <RolloutDetailPage id={numericId} /> : <RolloutsPage />
       if (Number.isFinite(numericId)) crumbs.push({ label: `#${numericId}` })
       break
+    case 'about': page = <AboutPage />; break
     case 'knowledge': page = <KnowledgePage />; break
     case 'vintf': page = <VintfPage />; break
     case 'packages': page = <PackagesPage />; break

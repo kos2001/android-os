@@ -29,6 +29,8 @@ Android 기기/BSP의 메이저 OS 업그레이드(예: 16 → 17)를 지원하�
 | `readiness` | `data/releases.json` 기반 규칙 판정 (커널·FCM 레벨·ION·VNDK·memfd·HAL·16KB) |
 | `vintf` | device manifest(+fragments)·framework matrix 파싱, matrix diff, manifest×matrix 검사 |
 | `remote` | HTTP Range 원격 파일 — 수 GB OTA zip 을 수백 KB 만 읽고 검사 |
+| `kernel` | GKI `uname -r`·kernel `.config`(.gz) 해석, vendor `.ko` ELF 분석, KMI symbol list 대조, 커널 uprev 후보 |
+| `drivers` | 드라이버 인벤토리 — 커널 드라이버(.ko: import API·alias 버스)와 HAL 을 서브시스템별로 분류, 드라이버별 ION 사용 |
 
 ```sh
 python3 -m unittest discover -s tests -t .   # 코어만 (Python ≥ 3.10)
@@ -39,9 +41,10 @@ ANDROID_OS_NETWORK_TESTS=1 .venv/bin/python -m unittest tests.test_remote       
 
 ## 웹 콘솔 (`web/`)
 
-React + TypeScript + Tailwind 운영 콘솔. 개요 대시보드, 플랫폼 준비도 판정·작업 항목, 릴리스 지식베이스(커널 지원 기간 차트),
+React + TypeScript + Tailwind 운영 콘솔. 서비스 소개 페이지(`#/about` — 두 축·사용 흐름·판정 규칙·구성·원칙), 개요 대시보드, 플랫폼 준비도 판정·작업 항목, 릴리스 지식베이스(커널 지원 기간 차트),
 VINTF matrix 비교, OTA 패키지 등록·검사, 롤아웃 단계 운영(진행 추이·오류 코드·자동 중단 평가), Delta 후보, 감사 로그.
-명령 팔레트(⌘K), 라이트/다크 테마, 모바일 메뉴, 모든 차트의 표 보기를 지원한다.
+명령 팔레트(⌘K), 라이트/다크 테마, 모바일 메뉴, 모든 차트의 표 보기, **한국어·영어 UI**(상단 바 `EN/한` 버튼 또는 설정 — 첫 방문은 브라우저 언어)를 지원한다.
+readiness finding 은 `title`/`detail`(한국어)과 `title_en`/`detail_en`(영어)을 함께 저장·응답한다(영어 도입 전 판정은 한국어만).
 
 ```sh
 cd web && npm ci && npm run build      # web/dist 생성 → backend 가 / 에서 서빙 (index.html no-cache, 해시 에셋 immutable)
@@ -62,6 +65,13 @@ curl -X POST $A/platforms -H 'content-type: application/json' \
   -d '{"name":"my-bsp","soc":"my-soc","android_version":"15","kernel_branch":"android14-6.1"}'
 curl -X PUT  $A/platforms/1/manifest -F files=@vendor/etc/vintf/manifest.xml -F files=@fragment.xml
 curl -X POST $A/platforms/1/readiness-runs -H 'content-type: application/json' -d '{"target_release":"17"}'
+# 커널: symbol list 등록(AOSP) → uname·config·vendor 모듈 업로드 → uprev 후 기준 판정
+.venv/bin/python scripts/import_symbol_lists.py --branch android17-6.18
+curl -X PUT $A/platforms/1/kernel -F kernel_release="$(adb shell uname -r)" -F config=@config.gz \
+  -F modules=@vendor_dlkm/lib/modules/foo.ko
+curl "$A/platforms/1/kernel/uprev?target_release=17"
+curl -X POST $A/platforms/1/readiness-runs -H 'content-type: application/json' \
+  -d '{"target_release":"17","target_kernel_branch":"android17-6.18"}'
 curl -X POST $A/packages/inspect -H 'content-type: application/json' -d '{"url":"https://.../ota.zip"}'
 ```
 
