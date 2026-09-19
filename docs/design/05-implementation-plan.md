@@ -86,6 +86,24 @@
 - 다운그레이드 패키지 승인 워크플로(OT-13 예외) 미구현 — 현재는 항상 rejected
 - `SWITCH_SLOT_ON_REBOOT`, `POWERWASH` 헤더 값 형식은 원문 미확인이라 응답에 넣지 않고 `policy.switch_slot_on_reboot`, `package.wipe` 로만 전달
 
+## 0.3 진행 결과 (2026-09-19) — 커널 준비도 (research/01 §6.2)
+
+| 항목 | 구현 | 검증 |
+|---|---|---|
+| GKI 릴리스 문자열 | `uname -r` → 버전·브랜치·KMI generation (`<w>.<x>.<y>-<androidNN>-<k>[-…]`, 비 GKI 거부) | 단위 테스트 |
+| kernel .config | 텍스트·`config.gz` 파싱 → `CONFIG_ION`·페이지 크기·DMA-BUF heaps·MODVERSIONS 힌트, 프로파일 반영 | 단위·API 테스트 |
+| vendor 모듈(.ko) | ELF64 LE ET_REL 파서(표준 라이브러리) → `.modinfo`(name/vermagic/license/depends), import 심볼, `__ksymtab_*` export | 합성 ELF 테스트(손상·ELF32·BE·ET_EXEC 거부) |
+| KMI 검사 | 모듈 import − (목표 브랜치 symbol list ∪ vendor 모듈 export) → `KMI_SYMBOL_MISSING`(warning, 20개까지 개별 + 나머지 요약), vermagic 브랜치 불일치 → `KERNEL_MODULE_REBUILD`(info) | 단위·API 테스트 |
+| uprev 후보 | 목표 릴리스 지원 브랜치 중 현재 이상, EOL·QPR 제외·지원 기간 기준 권장(없으면 EOL 최장). `KERNEL_COMPAT`/`_QPR`/`EOL` finding 에 권장 브랜치 표기, `target_kernel_branch` 로 uprev 후 기준 판정 | 단위·API 테스트 |
+| symbol list 가져오기 | `scripts/import_symbol_lists.py --branch …` — gitiles `gki/aarch64/symbols/`(android16-6.12+) 또는 `android/abi_gki_aarch64*`(이전), 429 재시도 | **실데이터**: android14-6.1 36파일 8,932개, android16-6.12 42파일 10,542개, android17-6.18 25파일 9,548개 등록 |
+| 웹 콘솔 | 플랫폼 상세 “커널” 카드(uname·config·.ko 업로드, uprev 후보), 판정 기준 커널 선택 | 브라우저 확인 |
+
+실데이터에서 확인한 사실: android16-6.12 의 `meizu` symbol list 는 비어 있음 → 빈 파일 허용. android16-6.12 에서 `kmalloc_trace` 는 KMI 에 없음(6.12 에서 `_noprof` 계열로 변경).
+
+한계: GKI 모듈(system_dlkm) export 는 `abi_gki_protected_exports_aarch64` 가 있는 브랜치(android14-6.1)만 반영 → 다른 브랜치에서는 누락으로 보일 수 있어 warning 으로만 보고. CRC(modversions) 일치·실제 모듈 로드는 검사하지 않음(ABI 도구·실기기 필요). 실제 vendor `.ko` 로는 미검증(합성 ELF 로만 테스트).
+
+`.venv/bin/python -m unittest discover -s tests -t .` → **102 tests OK** (네트워크 1 skip).
+
 ## 1. 단계별 계획
 
 선행 조건: [00 §3](00-scope-assumptions.md) 질문 Q1(범위), Q6(기기 인증), Q7(인프라) 확정.

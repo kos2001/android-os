@@ -69,6 +69,21 @@ CREATE TABLE IF NOT EXISTS work_item (
     updated_at TEXT NOT NULL,
     CHECK (status <> 'waived' OR waive_reason IS NOT NULL)
 );
+CREATE TABLE IF NOT EXISTS platform_kernel (
+    platform_id INTEGER PRIMARY KEY REFERENCES platform(id) ON DELETE CASCADE,
+    kernel_release TEXT,              -- uname -r
+    kmi_generation INTEGER,
+    config TEXT,                      -- JSON {CONFIG_X: value}
+    modules TEXT,                     -- JSON [KernelModule.to_dict()]
+    uploaded_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS kmi_symbol_list (
+    branch TEXT PRIMARY KEY,          -- 'android17-6.18'
+    symbols TEXT NOT NULL,            -- JSON [name]
+    files TEXT NOT NULL,              -- JSON [filename]
+    source TEXT,
+    uploaded_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY,
     actor TEXT NOT NULL,
@@ -155,6 +170,16 @@ class Store:
         manifest = self._all("SELECT target_level, hal_count, uploaded_at FROM platform_manifest WHERE platform_id = ?",
                              (pid,))
         row["manifest"] = manifest[0] if manifest else None
+        kernel = self._all("SELECT kernel_release, kmi_generation, config IS NOT NULL AS has_config, modules, "
+                           "uploaded_at FROM platform_kernel WHERE platform_id = ?", (pid,))
+        if kernel:
+            k = kernel[0]
+            row["kernel"] = {"kernel_release": k["kernel_release"], "kmi_generation": k["kmi_generation"],
+                             "has_config": bool(k["has_config"]),
+                             "module_count": len(json.loads(k["modules"])) if k["modules"] else 0,
+                             "uploaded_at": k["uploaded_at"]}
+        else:
+            row["kernel"] = None
         return row
 
     def list_platforms(self) -> list[dict]:
@@ -180,6 +205,57 @@ class Store:
     def manifest_documents(self, pid: int) -> list[dict] | None:
         rows = self._all("SELECT documents FROM platform_manifest WHERE platform_id = ?", (pid,))
         return json.loads(rows[0]["documents"]) if rows else None
+
+    # ------------------------------------------------------------------ kernel
+    def save_kernel(self, pid: int, changes: dict, profile_updates: dict, actor: str) -> dict:
+        """주어진 항목(kernel_release·kmi_generation / config / modules)만 교체하고 나머지는 유지한다."""
+        before = self.get_platform(pid)
+        stored = {k: (json.dumps(v, ensure_ascii=False) if k in ("config", "modules") else v)
+                  for k, v in changes.items()}
+        cols = list(stored)
+        with self.tx() as conn:
+            conn.execute(f"INSERT INTO platform_kernel (platform_id, {', '.join(cols)}, uploaded_at) "
+                         f"VALUES (?, {', '.join('?' * len(cols))}, ?) ON CONFLICT(platform_id) DO UPDATE SET "
+                         + ", ".join(f"{c} = excluded.{c}" for c in [*cols, "uploaded_at"]),
+                         (pid, *stored.values(), now()))
+            updates = {k: v for k, v in profile_updates.items() if before[k] != v}
+            for column, value in updates.items():
+                conn.execute(f"UPDATE platform SET {column} = ? WHERE id = ?", (int(value), pid))
+            self._audit(conn, actor, "upload_kernel", "platform", pid,
+                        before={k: before[k] for k in updates} or None,
+                        after={"kernel_release": changes.get("kernel_release"),
+                               "config": "config" in changes,
+                               "modules": [m["name"] for m in changes.get("modules", [])], **updates})
+        return self.get_platform(pid)
+
+    def kernel_artifacts(self, pid: int) -> dict | None:
+        rows = self._all("SELECT kernel_release, kmi_generation, config, modules, uploaded_at FROM platform_kernel "
+                         "WHERE platform_id = ?", (pid,))
+        if not rows:
+            return None
+        row = rows[0]
+        return {**row, "config": json.loads(row["config"]) if row["config"] else None,
+                "modules": json.loads(row["modules"]) if row["modules"] else []}
+
+    def save_symbol_list(self, branch: str, symbols: set[str], files: list[str], source: str | None,
+                         actor: str) -> dict:
+        with self.tx() as conn:
+            conn.execute("INSERT INTO kmi_symbol_list (branch, symbols, files, source, uploaded_at) "
+                         "VALUES (?, ?, ?, ?, ?) ON CONFLICT(branch) DO UPDATE SET symbols = excluded.symbols, "
+                         "files = excluded.files, source = excluded.source, uploaded_at = excluded.uploaded_at",
+                         (branch, json.dumps(sorted(symbols)), json.dumps(files), source, now()))
+            self._audit(conn, actor, "upload_symbol_list", "kmi_symbol_list", None,
+                        after={"branch": branch, "symbols": len(symbols), "files": files, "source": source})
+        return {"branch": branch, "symbol_count": len(symbols), "files": files, "source": source}
+
+    def symbol_list(self, branch: str) -> set[str] | None:
+        rows = self._all("SELECT symbols FROM kmi_symbol_list WHERE branch = ?", (branch,))
+        return set(json.loads(rows[0]["symbols"])) if rows else None
+
+    def list_symbol_lists(self) -> list[dict]:
+        rows = self._all("SELECT branch, symbols, files, source, uploaded_at FROM kmi_symbol_list ORDER BY branch")
+        return [{"branch": r["branch"], "symbol_count": len(json.loads(r["symbols"])), "files": json.loads(r["files"]),
+                 "source": r["source"], "uploaded_at": r["uploaded_at"]} for r in rows]
 
     # ------------------------------------------------------------------ matrices
     def save_matrix(self, release: str, level: str, xml: str, source: str | None, actor: str) -> dict:
@@ -228,7 +304,8 @@ class Store:
         for f in findings:
             f["sources"] = json.loads(f["sources"])
         return {**run, "ready": summary["ready"], "counts": summary["counts"], "as_of": summary["as_of"],
-                "current_release": summary["current_release"], "findings": findings}
+                "current_release": summary["current_release"], "kernel_branch": summary.get("kernel_branch"),
+                "findings": findings}
 
     def list_runs(self, pid: int) -> list[dict]:
         return self._all("SELECT id, target_release, kb_version, created_by, created_at FROM readiness_run "
