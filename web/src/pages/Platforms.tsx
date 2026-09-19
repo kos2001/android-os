@@ -2,13 +2,14 @@ import { Cpu, Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { PageHeader } from '../components/layout'
 import { Dialog, useToast } from '../components/ui/overlay'
-import { Button, Card, EmptyState, ErrorBanner, Field, Input, Mono, Switch } from '../components/ui/primitives'
+import { Button, Card, cx, EmptyState, ErrorBanner, Field, Input, Mono, Switch } from '../components/ui/primitives'
 import { Badge } from '../components/ui/status'
 import { DataTable } from '../components/ui/table'
 import { api, type Platform } from '../lib/api'
 import { relativeTime } from '../lib/format'
 import { navigate, useAsync, useRoute } from '../lib/hooks'
 import { useT } from '../lib/i18n'
+import { HUE, hueOf } from '../lib/palette'
 
 const EMPTY = {
   name: '', soc: '', android_version: '16', kernel_branch: 'android16-6.12', fcm_target_level: '',
@@ -69,7 +70,7 @@ export function NewPlatformDialog({ open, onClose, onCreated }: {
             <Input type="date" value={form.support_until} onChange={(e) => set('support_until', e.target.value)} />
           </Field>
         </div>
-        <div className="rounded-md border border-line px-3 py-1.5">
+        <div className={cx('rounded-md border-l-4 px-3 py-1.5 ring-1 ring-inset', HUE.indigo.border, HUE.indigo.ring)}>
           <Switch label={t('VNDK 사용', 'Uses VNDK')} checked={form.uses_vndk} onChange={(v) => set('uses_vndk', v)} />
           <Switch label={t('ION 메모리 할당자 사용', 'Uses ION memory allocator')} checked={form.uses_ion} onChange={(v) => set('uses_ion', v)} />
           <Switch label={t('16 KB 페이지 지원', 'Supports 16 KB pages')} checked={form.supports_16kb} onChange={(v) => set('supports_16kb', v)} />
@@ -103,13 +104,20 @@ export default function PlatformsPage() {
           empty={<EmptyState icon={<Cpu className="size-5" />} title={t('등록된 플랫폼이 없습니다', 'No platforms registered')}
             action={<Button variant="primary" onClick={() => setOpen(true)}>{t('플랫폼 등록', 'Register platform')}</Button>} />}
           columns={[
-            { key: 'name', header: t('이름', 'Name'), sort: (p) => p.name, cell: (p) => <span className="font-medium">{p.name}</span> },
-            { key: 'soc', header: 'SoC', sort: (p) => p.soc, cell: (p) => p.soc },
-            { key: 'android', header: 'Android', sort: (p) => p.android_version, cell: (p) => p.android_version },
-            { key: 'kernel', header: t('커널', 'Kernel'), sort: (p) => p.kernel_branch, cell: (p) => <Mono>{p.kernel_branch}</Mono> },
-            { key: 'fcm', header: 'FCM', cell: (p) => p.fcm_target_level ?? <span className="text-muted">—</span> },
+            { key: 'name', header: t('이름', 'Name'), sort: (p) => p.name, cell: (p) => (
+              <span className="flex items-center gap-2 font-medium">
+                <span aria-hidden className={cx('grid size-6 shrink-0 place-items-center rounded-md ring-1 ring-inset', HUE[hueOf(p.soc)].soft, HUE[hueOf(p.soc)].text, HUE[hueOf(p.soc)].ring)}>
+                  <Cpu className="size-3.5" />
+                </span>
+                {p.name}
+              </span>) },
+            { key: 'soc', header: 'SoC', sort: (p) => p.soc, cell: (p) => (
+              <span className="inline-flex items-center gap-1.5"><span aria-hidden className={cx('size-2 rounded-full', HUE[hueOf(p.soc)].dot)} />{p.soc}</span>) },
+            { key: 'android', header: 'Android', sort: (p) => p.android_version, cell: (p) => <Badge hue={hueOf(p.android_version)}>Android {p.android_version}</Badge> },
+            { key: 'kernel', header: t('커널', 'Kernel'), sort: (p) => p.kernel_branch, cell: (p) => <Badge hue={hueOf(p.kernel_branch)}><Mono className="text-[11px]">{p.kernel_branch}</Mono></Badge> },
+            { key: 'fcm', header: 'FCM', cell: (p) => p.fcm_target_level ? <Badge hue="cyan">{p.fcm_target_level}</Badge> : <span className="text-muted">—</span> },
             { key: 'manifest', header: 'Manifest', cell: (p) => p.manifest
-              ? <Badge tone="accent">HAL {p.manifest.hal_count}</Badge> : <span className="text-muted">{t('없음', 'None')}</span> },
+              ? <Badge hue="sky">HAL {p.manifest.hal_count}</Badge> : <span className="text-muted">{t('없음', 'None')}</span> },
             { key: 'flags', header: t('레거시 의존', 'Legacy deps'), cell: (p) => (
               <div className="flex gap-1">
                 {p.uses_ion && <Badge tone="serious">ION</Badge>}

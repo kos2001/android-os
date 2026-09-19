@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api, type Health } from '../lib/api'
 import { navigate, useAsync, useHotkey, useRoute, useTheme, type ThemeChoice } from '../lib/hooks'
 import { tr, useLang } from '../lib/i18n'
+import { HUE, hueOf, PAGE_HUE, type Hue } from '../lib/palette'
 import { cx, Kbd } from './ui/primitives'
 
 // 라벨은 [한국어, English]. 렌더 시 tr(...) 로 고른다. keywords 는 두 언어 검색용.
@@ -60,12 +61,13 @@ function Sidebar({ health, className, onNavigate }: { health?: Health; className
             <ul className="space-y-0.5">
               {group.items.map((item) => {
                 const active = path === item.path || path.startsWith(item.path + '/')
+                const hue = HUE[PAGE_HUE[item.path.slice(1)] ?? 'sky']
                 return (
                   <li key={item.path}>
                     <a href={`#${item.path}`} onClick={onNavigate}
                       className={cx('flex h-8 items-center gap-2.5 rounded-md px-2 text-[13px] transition-colors',
-                        active ? 'bg-accent/10 font-medium text-ink' : 'text-ink-2 hover:bg-line/50 hover:text-ink')}>
-                      <span className={active ? 'text-accent-ink' : 'text-muted'}>{item.icon}</span>
+                        active ? cx(hue.soft, 'font-medium text-ink ring-1 ring-inset', hue.ring) : 'text-ink-2 hover:bg-line/50 hover:text-ink')}>
+                      <span className={hue.text}>{item.icon}</span>
                       {tr(...item.label)}
                     </a>
                   </li>
@@ -258,10 +260,20 @@ export function AppShell({ crumbs, children }: { crumbs: ReactNode; children: Re
 export function PageHeader({ title, description, actions, meta }: {
   title: ReactNode; description?: ReactNode; actions?: ReactNode; meta?: ReactNode
 }) {
+  // 현재 페이지의 메뉴 아이콘과 대표 색을 헤더에 쓴다
+  const { segments } = useRoute()
+  const section = segments[0] ?? 'overview'
+  const item = NAV.flatMap((g) => g.items).find((i) => i.path === `/${section}`)
+  const hue = HUE[PAGE_HUE[section] ?? 'sky']
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
-        <h1 className="text-xl font-semibold tracking-tight text-ink">{title}</h1>
+        <div aria-hidden className={cx('mb-3 h-1 w-14 rounded-full bg-gradient-to-r', hue.bar)} />
+        <h1 className="flex items-center gap-2.5 text-xl font-semibold tracking-tight text-ink">
+          {item && <span aria-hidden className={cx('flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset', hue.soft, hue.text, hue.ring)}>
+            {item.icon}</span>}
+          <span className="min-w-0">{title}</span>
+        </h1>
         {description && <p className="mt-1 max-w-2xl text-[13px] text-muted">{description}</p>}
         {meta && <div className="mt-2 flex flex-wrap items-center gap-2">{meta}</div>}
       </div>
@@ -270,10 +282,18 @@ export function PageHeader({ title, description, actions, meta }: {
   )
 }
 
-export function StatTile({ label, value, sub, icon }: { label: string; value: ReactNode; sub?: ReactNode; icon?: ReactNode }) {
+/** hue 를 주지 않으면 라벨로 항상 같은 색을 고른다. 값의 좋고 나쁨은 색이 아니라 sub 문구로 전한다. */
+export function StatTile({ label, value, sub, icon, hue }: {
+  label: string; value: ReactNode; sub?: ReactNode; icon?: ReactNode; hue?: Hue
+}) {
+  const h = HUE[hue ?? hueOf(label)]
   return (
-    <div className="rounded-lg border border-line bg-surface px-4 py-3.5">
-      <p className="flex items-center gap-1.5 text-xs text-muted">{icon}{label}</p>
+    <div className="relative overflow-hidden rounded-lg border border-line bg-surface px-4 py-3.5">
+      <div aria-hidden className={cx('absolute inset-x-0 top-0 h-1 bg-gradient-to-r', h.bar)} />
+      <p className="flex items-center gap-2 text-xs text-muted">
+        {icon && <span aria-hidden className={cx('flex size-6 items-center justify-center rounded-md ring-1 ring-inset', h.soft, h.text, h.ring)}>{icon}</span>}
+        {label}
+      </p>
       <p className="mt-1.5 text-2xl font-semibold tracking-tight text-ink">{value}</p>
       {sub && <p className="mt-1 text-xs text-muted">{sub}</p>}
     </div>
