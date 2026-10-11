@@ -17,6 +17,7 @@ from upgrade_core.ota_package import OtaPackageInfo
 from upgrade_core.rollout import NON_FAILURE_CODES, RolloutWindow, decode_error_code
 
 from .store import Conflict, NotFound, Store, now
+from .fleet import FleetStore
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS build (
@@ -138,11 +139,17 @@ def _json(v) -> str:
     return json.dumps(v, ensure_ascii=False)
 
 
-class OtaStore:
+class OtaStore(FleetStore):
     def __init__(self, store: Store):
         self.s = store
         with store.tx() as conn:
             conn.executescript(SCHEMA)
+            columns = {r["name"] for r in conn.execute("PRAGMA table_info(rollout_stage)")}
+            if "min_successful_boots" not in columns:
+                conn.execute("ALTER TABLE rollout_stage ADD COLUMN min_successful_boots INTEGER NOT NULL DEFAULT 0")
+            if "min_success_rate" not in columns:
+                conn.execute("ALTER TABLE rollout_stage ADD COLUMN min_success_rate REAL")
+        self.init_fleet()
 
     # ------------------------------------------------------------------ builds / packages
     def _ensure_build(self, conn, device: str, fingerprint: str, incremental: str, timestamp: int, spl: str,
@@ -233,8 +240,10 @@ class OtaStore:
                     (data["name"], build["id"], data["channel"], _json(data["filters"]), _json(data["halt_rules"]),
                      data["halt_mode"], _json(data["policy"]), actor, now())).lastrowid
                 for seq, stage in enumerate(data["stages"], 1):
-                    conn.execute("INSERT INTO rollout_stage (rollout_id, seq, percent, min_soak_hours) VALUES (?, ?, ?, ?)",
-                                 (rid, seq, stage["percent"], stage["min_soak_hours"]))
+                    conn.execute("INSERT INTO rollout_stage (rollout_id, seq, percent, min_soak_hours, "
+                                 "min_successful_boots, min_success_rate) VALUES (?, ?, ?, ?, ?, ?)",
+                                 (rid, seq, stage["percent"], stage["min_soak_hours"],
+                                  stage.get("min_successful_boots", 0), stage.get("min_success_rate")))
                 self.s._audit(conn, actor, "create", "rollout", rid, after=data)
         except sqlite3.IntegrityError as exc:
             raise Conflict(f"rollout {data['name']!r} already exists") from exc
@@ -245,9 +254,40 @@ class OtaStore:
                           "JOIN build b ON b.id = r.target_build_id WHERE r.id = ?", (rid,))
         for k in ("filters", "halt_rules", "policy"):
             row[k] = json.loads(row[k])
-        row["stages"] = self.s._all("SELECT seq, percent, min_soak_hours, promoted_at, promoted_by FROM rollout_stage "
+        row["stages"] = self.s._all("SELECT seq, percent, min_soak_hours, min_successful_boots, min_success_rate, "
+                                    "promoted_at, promoted_by FROM rollout_stage "
                                     "WHERE rollout_id = ? ORDER BY seq", (rid,))
         return row
+
+    def promotion_status(self, rid: int, at: datetime | None = None) -> dict:
+        """Conservative rollout-wide attempt history, including failures before retries."""
+        at = at or datetime.fromisoformat(now())
+        with self.s.tx():
+            r = self.get_rollout(rid)
+            w = self.rollout_window(rid)
+            successes = w.installed - w.boot_fallback
+            rate = successes / w.attempted if w.attempted else None
+            reasons, soak_until = [], None
+            current = r["stages"][r["current_stage"] - 1] if r["current_stage"] else None
+            if r["state"] != "active":
+                reasons.append("NOT_ACTIVE")
+            if r["current_stage"] >= len(r["stages"]):
+                reasons.append("FINAL_STAGE")
+            if current:
+                soak_until = datetime.fromisoformat(current["promoted_at"]) + timedelta(hours=current["min_soak_hours"])
+                if at < soak_until:
+                    reasons.append("SOAK_PENDING")
+                if successes < current["min_successful_boots"]:
+                    reasons.append("INSUFFICIENT_SUCCESSFUL_BOOTS")
+                threshold = current["min_success_rate"]
+                if threshold is not None and (rate is None or rate < threshold):
+                    reasons.append("SUCCESS_RATE_BELOW_THRESHOLD")
+            return {"rollout_id": rid, "can_promote": not reasons, "reasons": reasons,
+                    "soak_until": soak_until.isoformat() if soak_until else None,
+                    "attempted": w.attempted, "successful_boots": successes, "success_rate": rate,
+                    "min_successful_boots": current["min_successful_boots"] if current else 0,
+                    "min_success_rate": current["min_success_rate"] if current else None,
+                    "scope": "rollout_all_attempts"}
 
     def list_rollouts(self) -> list[dict]:
         return [self.get_rollout(r["id"]) for r in self.s._all("SELECT id FROM rollout ORDER BY id")]
@@ -270,6 +310,9 @@ class OtaStore:
                                   + timedelta(hours=current["min_soak_hours"]))
                     if at < soak_until:
                         raise Conflict(f"stage {stage} soak not finished (until {soak_until.isoformat()})")
+                    health = self.promotion_status(rid, at)
+                    if not health["can_promote"]:
+                        raise Conflict("promotion blocked: " + ", ".join(health["reasons"]))
                 nxt = stages[stage]
                 updates = {"state": "active", "current_stage": nxt["seq"], "current_percent": nxt["percent"]}
             elif action == "halt":
@@ -297,13 +340,16 @@ class OtaStore:
                            "ORDER BY r.id DESC", (device, channel))
         out = []
         for row in rows:
-            r = self.get_rollout(row["id"])
-            pkgs = self.s._all("SELECT p.*, b.fingerprint AS post_build FROM ota_package p JOIN build b "
-                               "ON b.id = p.target_build_id WHERE p.target_build_id = ? AND p.status = 'ready'",
-                               (r["target_build_id"],))
-            r["packages"] = [self._package_out(p) for p in pkgs]
-            out.append(r)
+            out.append(self.rollout_with_packages(row["id"]))
         return out
+
+    def rollout_with_packages(self, rid: int) -> dict:
+        r = self.get_rollout(rid)
+        pkgs = self.s._all("SELECT p.*, b.fingerprint AS post_build FROM ota_package p JOIN build b "
+                           "ON b.id = p.target_build_id WHERE p.target_build_id = ? AND p.status = 'ready'",
+                           (r["target_build_id"],))
+        r["packages"] = [self._package_out(p) for p in pkgs]
+        return r
 
     @staticmethod
     def to_matcher(r: dict, percent_override: float | None = None, state_override: str | None = None) -> Rollout:
@@ -354,9 +400,11 @@ class OtaStore:
 
     def record_check(self, device_hash: str, device: str, fingerprint: str, payload: dict) -> None:
         with self.s.tx() as conn:
+            ts = now()
             conn.execute("INSERT INTO device_event (device_hash, device, type, fingerprint, occurred_at, received_at, "
                          "payload) VALUES (?, ?, 'check', ?, ?, ?, ?)",
-                         (device_hash, device, fingerprint, now(), now(), _json(payload)))
+                         (device_hash, device, fingerprint, ts, ts, _json(payload)))
+            self.save_inventory(conn, device_hash, device, fingerprint, payload, ts)
 
     def apply_boot_outcomes(self, device_hash: str, fingerprint: str, boot_id: str | None) -> list[dict]:
         """재부팅 후 체크인으로 설치 결과 판정.

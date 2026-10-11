@@ -235,6 +235,8 @@ export interface Stage {
   seq: number
   percent: number
   min_soak_hours: number
+  min_successful_boots: number
+  min_success_rate: number | null
   promoted_at: string | null
   promoted_by: string | null
 }
@@ -347,6 +349,54 @@ export interface Health {
   kb_version: string
 }
 
+export interface FleetDevice {
+  device_hash: string
+  device: string
+  fingerprint: string
+  channel: Channel
+  build_timestamp: number
+  security_patch: string
+  sdk_level: number | null
+  carrier: string | null
+  region: string | null
+  sku: string | null
+  tags: string[]
+  first_seen_at: string
+  last_seen_at: string
+}
+
+export interface FleetDeviceDetail extends FleetDevice {
+  assignments: { id: number; rollout_id: number; target_fingerprint: string; state: AssignmentState;
+    attempt: number; last_error_code: number | null; updated_at: string }[]
+}
+
+export interface FleetList { items: FleetDevice[]; total: number; limit: number; offset: number }
+export interface FleetSummary { total: number; seen_24h: number; models: { device: string; devices: number }[];
+  tags: { tag: string; devices: number }[] }
+export interface RolloutPreview {
+  rollout_id: number
+  mode: 'draft_first_stage' | 'current_stage'
+  percent: number
+  total: number
+  eligible: number
+  reasons: Record<string, number>
+  packages: { full: number; incremental: number }
+  sample: { device_hash: string; reason: string }[]
+  as_of: string
+}
+export interface PromotionStatus {
+  rollout_id: number
+  can_promote: boolean
+  reasons: string[]
+  soak_until: string | null
+  attempted: number
+  successful_boots: number
+  success_rate: number | null
+  min_successful_boots: number
+  min_success_rate: number | null
+  scope: 'rollout_all_attempts'
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message)
@@ -410,6 +460,13 @@ const post = <T,>(path: string, body?: unknown) => request<T>('POST', path, body
 export const api = {
   health: () => get<Health>('/api/health'),
   overview: () => get<Overview>('/admin/v1/overview'),
+  devices: (params: { q?: string; device?: string; channel?: string; tag?: string; seen_within_hours?: string;
+    limit?: string; offset?: string } = {}) => get<FleetList>(`/admin/v1/devices?${new URLSearchParams(
+      Object.entries(params).filter((entry): entry is [string, string] => entry[1] !== undefined && entry[1] !== ''),
+    )}`),
+  fleetSummary: () => get<FleetSummary>('/admin/v1/devices/summary'),
+  device: (hash: string) => get<FleetDeviceDetail>(`/admin/v1/devices/${hash}`),
+  setDeviceTags: (hash: string, tags: string[]) => request<FleetDeviceDetail>('PUT', `/admin/v1/devices/${hash}/tags`, { tags }),
   kb: () => get<KnowledgeBase>('/admin/v1/kb/releases'),
 
   platforms: () => get<Platform[]>('/admin/v1/platforms'),
@@ -463,6 +520,8 @@ export const api = {
   transition: (id: number, action: string, reason?: string) =>
     post<Rollout>(`/admin/v1/rollouts/${id}/${action}`, reason ? { reason } : undefined),
   metrics: (id: number) => get<RolloutMetrics>(`/admin/v1/rollouts/${id}/metrics`),
+  rolloutPreview: (id: number) => get<RolloutPreview>(`/admin/v1/rollouts/${id}/preview`),
+  promotionStatus: (id: number) => get<PromotionStatus>(`/admin/v1/rollouts/${id}/promotion-status`),
   timeseries: (id: number, hours = 48) => get<TimePoint[]>(`/admin/v1/rollouts/${id}/timeseries?hours=${hours}`),
   evaluateHalt: (id: number, apply = false) =>
     post<HaltEvaluation>(`/admin/v1/rollouts/${id}/evaluate-halt?apply=${apply}`),

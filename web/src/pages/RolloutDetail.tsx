@@ -11,6 +11,7 @@ import { dateTime, num, parseFingerprint, pct, relativeTime, shortFingerprint } 
 import { useAsync } from '../lib/hooks'
 import { useT } from '../lib/i18n'
 import { HUE, hueOf, type Hue } from '../lib/palette'
+import { rolloutReason } from '../lib/rollout-reasons'
 
 type Action = 'start' | 'promote' | 'pause' | 'resume' | 'halt' | 'complete'
 
@@ -57,6 +58,8 @@ export default function RolloutDetailPage({ id }: { id: number }) {
   const [hours, setHours] = useState<'24' | '72' | '168'>('72')
   const rollout = useAsync(() => api.rollout(id), [id], 15_000)
   const metrics = useAsync(() => api.metrics(id), [id], 15_000)
+  const promotion = useAsync(() => api.promotionStatus(id), [id], 15_000)
+  const preview = useAsync(() => api.rolloutPreview(id), [id])
   const series = useAsync(() => api.timeseries(id, Number(hours)), [id, hours], 30_000)
   const [action, setAction] = useState<Action | null>(null)
   const [evaluation, setEvaluation] = useState<HaltEvaluation>()
@@ -64,7 +67,7 @@ export default function RolloutDetailPage({ id }: { id: number }) {
 
   const r = rollout.data
   const m = metrics.data
-  const reload = () => { rollout.reload(); metrics.reload(); series.reload() }
+  const reload = () => { rollout.reload(); metrics.reload(); series.reload(); promotion.reload(); preview.reload() }
 
   if (rollout.error) return <ErrorBanner error={rollout.error} onRetry={rollout.reload} />
   if (!r) return <div className="space-y-4"><Skeleton className="h-12 w-1/3" /><Skeleton className="h-72" /></div>
@@ -75,9 +78,6 @@ export default function RolloutDetailPage({ id }: { id: number }) {
   const errorRate = w && w.attempted ? Object.values(w.failed_by_code).reduce((a, b) => a + b, 0) / w.attempted : null
   const fallbackRate = w && w.installed ? w.boot_fallback / w.installed : null
   const nextStage = r.stages[r.current_stage]
-  const soakUntil = r.current_stage > 0 && r.stages[r.current_stage - 1].promoted_at
-    ? new Date(new Date(r.stages[r.current_stage - 1].promoted_at!).getTime() + r.stages[r.current_stage - 1].min_soak_hours * 3600_000)
-    : null
 
   const evaluate = async () => {
     setEvaluating(true)
@@ -103,6 +103,7 @@ export default function RolloutDetailPage({ id }: { id: number }) {
           <Button variant="ghost" icon={<RefreshCw className="size-3.5" />} onClick={reload}>{t('새로고침', 'Refresh')}</Button>
           {AVAILABLE[r.state].map((a) => (
             <Button key={a} variant={a === 'halt' ? 'danger' : a === 'start' || a === 'promote' ? 'primary' : 'secondary'}
+              disabled={a === 'promote' && (!nextStage || !promotion.data?.can_promote)}
               icon={ACTION[a].icon} onClick={() => setAction(a)}>{ACTION[a].label}</Button>
           ))}
         </>}
@@ -122,10 +123,8 @@ export default function RolloutDetailPage({ id }: { id: number }) {
               <span aria-hidden className={cx('size-2 rounded-full', HUE.orange.dot)} />{t('배포 단계', 'Stages')}</p>
             <p className="text-xs text-muted">
               {t('현재', 'Current')} <b className="tabular text-ink">{r.current_percent}%</b>
-              {nextStage && soakUntil && t(
-                ` · 다음 단계(${nextStage.percent}%) 승격 가능: ${soakUntil <= new Date() ? '지금' : dateTime(soakUntil.toISOString())}`,
-                ` · Next stage (${nextStage.percent}%) can be promoted: ${soakUntil <= new Date() ? 'now' : dateTime(soakUntil.toISOString())}`,
-              )}
+              {nextStage && promotion.data && ` · ${t('승격', 'Promotion')}: ${promotion.data.can_promote
+                ? t('가능', 'Ready') : promotion.data.reasons.map(rolloutReason).join(' · ')}`}
             </p>
           </div>
           <ol className="grid gap-2" style={{ gridTemplateColumns: `repeat(${r.stages.length}, minmax(0, 1fr))` }}>
@@ -148,10 +147,43 @@ export default function RolloutDetailPage({ id }: { id: number }) {
                   <p className="text-[11px] text-muted">
                     {s.promoted_at ? `${relativeTime(s.promoted_at)} · ${s.promoted_by}` : t(`최소 ${s.min_soak_hours}시간 유지`, `Soak at least ${s.min_soak_hours}h`)}
                   </p>
+                  {(s.min_successful_boots > 0 || s.min_success_rate != null) && <p className="mt-1 text-[11px] text-muted">
+                    {t('승격 조건', 'Promotion gates')}: {t(`성공 ≥ ${s.min_successful_boots}`, `Boots ≥ ${s.min_successful_boots}`)}
+                    {s.min_success_rate != null && ` · ≥ ${pct(s.min_success_rate)}`}
+                  </p>}
                 </li>
               )
             })}
           </ol>
+          {promotion.error && <div className="mt-3"><ErrorBanner error={promotion.error} onRetry={promotion.reload} /></div>}
+          {promotion.data && r.current_stage > 0 && nextStage && <div className="mt-3 rounded-md bg-page p-3 text-xs text-muted">
+            <p>{t('전체 롤아웃 이력', 'Whole rollout history')}: {t('부팅 성공', 'Successful boots')} {num(promotion.data.successful_boots)} / {t('설치 시도', 'Install attempts')} {num(promotion.data.attempted)}
+              {` · ${t('성공률', 'Success rate')} ${pct(promotion.data.success_rate)}`}</p>
+            {promotion.data.soak_until && <p className="mt-1">{t('최소 유지 종료', 'Soak ends')}: {dateTime(promotion.data.soak_until)}</p>}
+          </div>}
+        </div>
+      </Card>
+
+      <Card className="mb-4">
+        <CardHeader title={t('배포 대상 미리보기', 'Deployment preview')} hue="blue"
+          description={t('같은 모델·채널의 마지막 체크인을 기준으로 이 롤아웃의 제공 가능 여부를 계산합니다. 초안은 첫 단계 비율을 적용합니다. 다른 롤아웃과의 우선순위는 반영하지 않습니다.',
+            'Calculates offers for this rollout using the latest check-ins for its model and channel. Drafts use the first-stage percentage. Priority against other rollouts is excluded.')}
+          actions={<Button size="sm" loading={preview.loading} onClick={preview.reload}>{t('다시 계산', 'Recalculate')}</Button>} />
+        <div className="space-y-3 p-4">
+          {!!r.filters.tags?.length && <p className="flex flex-wrap items-center gap-2 text-xs text-muted">{t('대상 태그 (하나 이상 일치)', 'Target tags (match any)')}
+            {r.filters.tags.map((tag) => <Badge key={tag} hue={hueOf(tag)}>{tag}</Badge>)}</p>}
+          {preview.error && <ErrorBanner error={preview.error} onRetry={preview.reload} />}
+          {preview.data ? <>
+            <p className="text-sm font-medium">{t('제공 가능', 'Eligible')} {num(preview.data.eligible)} / {num(preview.data.total)}
+              <span className="ml-3 text-xs font-normal text-muted">{preview.data.percent}% · full {num(preview.data.packages.full)} · incremental {num(preview.data.packages.incremental)}</span></p>
+            <div className="flex flex-wrap gap-2">{Object.entries(preview.data.reasons).map(([reason, count]) =>
+              <Badge key={reason} hue={reason === 'ELIGIBLE' ? 'teal' : 'slate'}>{rolloutReason(reason)}: {num(count)}</Badge>)}</div>
+            {preview.data.total === 0 && <p className="text-xs text-muted">{t('같은 모델·채널로 체크인한 기기가 없습니다.', 'No devices have checked in with this model and channel.')}</p>}
+            <div className="flex flex-wrap gap-2">{preview.data.sample.map((d) => <a key={d.device_hash}
+              href={`#/devices/${d.device_hash}`} title={rolloutReason(d.reason)} className="text-xs text-accent hover:underline">
+              {d.device_hash.slice(0, 8)}… · {rolloutReason(d.reason)}</a>)}</div>
+            <p className="text-[11px] text-muted">{t('계산 시각', 'Calculated at')}: {dateTime(preview.data.as_of)} · {t('최대 20개 기기 표시', 'Showing up to 20 devices')}</p>
+          </> : !preview.error && <Skeleton className="h-20" />}
         </div>
       </Card>
 
