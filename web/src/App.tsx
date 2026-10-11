@@ -5,6 +5,7 @@ import { tr, useLang } from './lib/i18n'
 import AboutPage from './pages/About'
 import AuditPage from './pages/Audit'
 import DeltaPage from './pages/Delta'
+import DevicesPage from './pages/Devices'
 import KnowledgePage from './pages/Knowledge'
 import OverviewPage from './pages/Overview'
 import PackagesPage from './pages/Packages'
@@ -43,6 +44,7 @@ export default function App() {
     case 'knowledge': page = <KnowledgePage />; break
     case 'vintf': page = <VintfPage />; break
     case 'packages': page = <PackagesPage />; break
+    case 'devices': page = <DevicesPage />; break
     case 'delta': page = <DeltaPage />; break
     case 'audit': page = <AuditPage />; break
     case 'settings': page = <SettingsPage />; break

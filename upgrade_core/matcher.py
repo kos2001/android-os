@@ -18,6 +18,7 @@ class DeviceState:
     carrier: str | None = None
     region: str | None = None
     sku: str | None = None
+    tags: tuple[str, ...] = ()  # operator-managed groups; never accepted from a device check
 
 
 @dataclass(frozen=True)
@@ -63,7 +64,9 @@ def _spl(value: str) -> date:
     return date.fromisoformat(value)
 
 
-def _filters_match(rollout: Rollout, dev: DeviceState) -> bool:
+def filters_match(rollout: Rollout, dev: DeviceState) -> bool:
+    if rollout.filters.get("tags") and not set(rollout.filters["tags"]).intersection(dev.tags):
+        return False
     for key, attr in FILTER_FIELDS.items():
         allowed = rollout.filters.get(key)
         if allowed and getattr(dev, attr) not in allowed:
@@ -90,7 +93,7 @@ def select_package(packages: tuple[Package, ...] | list[Package], dev: DeviceSta
 def select_update(rollouts: list[Rollout], dev: DeviceState) -> Match | NoMatch:
     reasons: set[str] = set()
     for rollout in rollouts:
-        if rollout.channel != dev.channel or not _filters_match(rollout, dev):
+        if rollout.channel != dev.channel or not filters_match(rollout, dev):
             continue
         if rollout.target_build == dev.fingerprint:
             reasons.add("UP_TO_DATE")

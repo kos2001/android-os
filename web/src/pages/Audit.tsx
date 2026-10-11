@@ -11,17 +11,17 @@ import { useAsync } from '../lib/hooks'
 import { useT } from '../lib/i18n'
 import { HUE, hueOf, type Hue } from '../lib/palette'
 
-const ENTITIES = ['all', 'platform', 'readiness_run', 'work_item', 'fcm_matrix', 'ota_package', 'rollout'] as const
+const ENTITIES = ['all', 'platform', 'readiness_run', 'work_item', 'fcm_matrix', 'ota_package', 'rollout', 'device'] as const
 
 // 장식용 색 구분 — 뜻이 비슷한 동작은 비슷한 색 (생성=초록, 업로드=보라 계열, 롤아웃 진행=파랑 계열). halt 는 상태 톤(critical)을 그대로 쓴다.
 const ACTION_HUE: Record<string, Hue> = {
-  create: 'emerald', register: 'teal', update: 'sky', retire: 'slate',
+  create: 'emerald', register: 'teal', update: 'sky', retire: 'slate', set_tags: 'blue',
   upload_manifest: 'indigo', upload_kernel: 'violet', upload_symbol_list: 'purple', upload_matrix: 'fuchsia',
   start: 'cyan', promote: 'blue', pause: 'amber', resume: 'lime', complete: 'emerald',
 }
 const ENTITY_HUE: Record<string, Hue> = {
   platform: 'indigo', readiness_run: 'teal', work_item: 'amber', fcm_matrix: 'fuchsia',
-  ota_package: 'emerald', rollout: 'orange', kmi_symbol_list: 'purple',
+  ota_package: 'emerald', rollout: 'orange', device: 'blue', kmi_symbol_list: 'purple',
 }
 const actionHue = (a: string) => ACTION_HUE[a] ?? hueOf(a)
 const entityHue = (e: string) => ENTITY_HUE[e] ?? hueOf(e)
@@ -62,7 +62,7 @@ export default function AuditPage() {
 
   return (
     <>
-      <PageHeader title={t('감사 로그', 'Audit log')} description={t('플랫폼·판정·패키지·롤아웃의 모든 변경 기록 (최근 300건).', 'Every change to platforms, checks, packages and rollouts (latest 300).')} />
+      <PageHeader title={t('감사 로그', 'Audit log')} description={t('플랫폼·판정·패키지·롤아웃·기기 태그의 변경 기록 (최근 300건).', 'Changes to platforms, checks, packages, rollouts and device tags (latest 300).')} />
       {log.error && <div className="mb-4"><ErrorBanner error={log.error} onRetry={log.reload} /></div>}
       <Card>
         <DataTable

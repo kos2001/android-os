@@ -140,6 +140,8 @@ CREATE TABLE rollout_stage (
     seq            INT NOT NULL,
     percent        NUMERIC(5, 2) NOT NULL,
     min_soak_hours INT NOT NULL DEFAULT 24,
+    min_successful_boots INT NOT NULL DEFAULT 0 CHECK (min_successful_boots >= 0),
+    min_success_rate NUMERIC CHECK (min_success_rate BETWEEN 0 AND 1),
     promoted_at    TIMESTAMPTZ,
     promoted_by    TEXT,
     PRIMARY KEY (rollout_id, seq)
@@ -158,6 +160,24 @@ CREATE TABLE assignment (
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (rollout_id, device_hash)
 );
+
+CREATE TABLE fleet_device (
+    device_hash CHAR(64) PRIMARY KEY,
+    device TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    channel TEXT NOT NULL CHECK (channel IN ('testing', 'beta', 'stable')),
+    inventory JSONB NOT NULL,
+    first_seen_at TIMESTAMPTZ NOT NULL,
+    last_seen_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX fleet_device_seen ON fleet_device(last_seen_at, device_hash);
+CREATE INDEX fleet_device_model ON fleet_device(device, channel);
+CREATE TABLE device_tag (
+    device_hash CHAR(64) NOT NULL REFERENCES fleet_device(device_hash) ON DELETE CASCADE,
+    tag TEXT NOT NULL CHECK (tag ~ '^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,31}$'),
+    PRIMARY KEY (device_hash, tag)
+);
+CREATE INDEX device_tag_name ON device_tag(tag, device_hash);
 
 CREATE TABLE device_event (
     id              BIGSERIAL,
