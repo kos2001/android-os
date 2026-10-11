@@ -1,5 +1,5 @@
 import { Activity, BookOpen, Info, Boxes, ChevronRight, Command, Cpu, FileDiff, GitCompareArrows, KeyRound, LayoutDashboard,
-  Languages, Menu, Monitor, Moon, Rocket, ScrollText, Search, Sun } from 'lucide-react'
+  Languages, Menu, Monitor, Moon, Rocket, ScrollText, Search, Sun, Smartphone } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api, type Health } from '../lib/api'
 import { navigate, useAsync, useHotkey, useRoute, useTheme, type ThemeChoice } from '../lib/hooks'
@@ -27,6 +27,7 @@ export const NAV: { group: [string, string] | null; items: { path: string; label
   {
     group: ['OTA 배포', 'OTA delivery'],
     items: [
+      { path: '/devices', label: ['기기 인벤토리', 'Device inventory'], icon: <Smartphone className="size-4" />, keywords: 'device fleet inventory tags 기기 태그' },
       { path: '/packages', label: ['패키지', 'Packages'], icon: <Boxes className="size-4" />, keywords: 'ota package zip' },
       { path: '/rollouts', label: ['롤아웃', 'Rollouts'], icon: <Rocket className="size-4" />, keywords: 'rollout staged deploy' },
       { path: '/delta', label: ['Delta 후보', 'Delta candidates'], icon: <GitCompareArrows className="size-4" />, keywords: 'incremental delta report' },

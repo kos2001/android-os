@@ -19,15 +19,15 @@ import logging
 import random
 import socket
 import threading
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime
 from typing import Annotated, Callable, Literal
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Query
 from pydantic import BaseModel, Field
 
-from upgrade_core.matcher import DeviceState, Match, select_update
+from upgrade_core.matcher import DeviceState, Match, filters_match, select_update
 from upgrade_core.ota_package import OtaPackageError, inspect_ota_package
 from upgrade_core.remote import HttpRangeFile, RangeNotSupported, RedirectRefused
 from upgrade_core.rollout import ERROR_NAMES, evaluate_halt
@@ -43,6 +43,11 @@ SHA256_HEX = r"^[0-9a-f]{64}$"
 AUTO_HALT_ACTOR = "auto-halt"
 # 재부팅 여부 판정용 (/proc/sys/kernel/random/boot_id)
 BOOT_ID = r"^[0-9a-fA-F-]{8,64}$"
+Tag = Annotated[str, Field(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,31}$")]
+
+
+class DeviceTagsIn(BaseModel):
+    tags: list[Tag] = Field(max_length=20)
 
 
 # --------------------------------------------------------------------------- #
@@ -101,6 +106,8 @@ class InspectIn(BaseModel):
 class StageIn(BaseModel):
     percent: float = Field(gt=0, le=100)
     min_soak_hours: float = Field(default=24, ge=0)
+    min_successful_boots: int = Field(default=0, ge=0)
+    min_success_rate: float | None = Field(default=None, ge=0, le=1)
 
 
 class RolloutFilters(BaseModel):
@@ -108,6 +115,7 @@ class RolloutFilters(BaseModel):
     regions: list[str] | None = None
     skus: list[str] | None = None
     source_fingerprints: list[str] | None = None
+    tags: list[Tag] | None = Field(default=None, max_length=20)
 
 
 class HaltRules(BaseModel):
@@ -217,12 +225,8 @@ def _next_check(policy: dict) -> int:
     return int(base * random.uniform(1 - SCATTER, 1 + SCATTER))
 
 
-def update_check(ota: OtaStore, body: UpdateCheckIn) -> dict:
-    ota.record_check(body.device_hash, body.device, body.fingerprint, body.model_dump(exclude={"device_hash"}))
-    ota.apply_boot_outcomes(body.device_hash, body.fingerprint, body.boot_id)
-    candidates = ota.candidate_rollouts(body.device, body.channel)
-    existing = {a["rollout_id"]: a for a in ota.assignments_for(body.device_hash)}
-
+def _offer_decision(ota: OtaStore, dev: DeviceState, candidates: list[dict], existing: dict) -> Match | dict:
+    """Pure offer selection shared by real checks and inventory previews."""
     # 진행 중인 할당이 있는 롤아웃을 먼저 본다 (새 롤아웃이 생겨도 설치 중인 업데이트를 유지)
     def priority(r: dict) -> int:
         a = existing.get(r["id"])
@@ -232,28 +236,45 @@ def update_check(ota: OtaStore, body: UpdateCheckIn) -> dict:
     for r in sorted(candidates, key=priority):
         a = existing.get(r["id"])
         in_progress = a is not None and a["state"] in IN_PROGRESS_STATES
-        if in_progress and (r["state"] == "paused" or (r["state"] == "halted" and r["halt_mode"] == "stop_new")):
-            matchers.append(ota.to_matcher(r, percent_override=100, state_override="active"))
-        else:
-            matchers.append(ota.to_matcher(r))
-    dev = DeviceState(device=body.device, fingerprint=body.fingerprint, build_timestamp=body.build_timestamp,
-                      security_patch=body.security_patch, channel=body.channel, device_hash=body.device_hash,
-                      carrier=body.carrier, region=body.region, sku=body.sku)
+        continued = in_progress and (r["state"] in ("active", "paused") or
+                                    (r["state"] == "halted" and r["halt_mode"] == "stop_new"))
+        matcher = ota.to_matcher(r, percent_override=100 if continued else None,
+                                 state_override="active" if continued else None)
+        if continued:
+            matcher = replace(matcher, filters={k: v for k, v in matcher.filters.items() if k != "tags"})
+        matchers.append(matcher)
     result = select_update(matchers, dev)
-    default_policy = candidates[0]["policy"] if candidates else {}
     if not isinstance(result, Match):
-        return {"update_available": False, "reason": result.reason, "next_check_after_s": _next_check(default_policy)}
-
+        filtered = bool(matchers) and not any(filters_match(r, dev) for r in matchers)
+        return {"update_available": False, "reason": "FILTER_MISMATCH" if filtered else result.reason}
     rollout = next(r for r in candidates if r["id"] == result.rollout.id)
     previous = existing.get(rollout["id"])
     if previous and previous["state"] == "installed_pending_reboot" and previous["package_id"] == result.package.id:
         # 설치 완료·재부팅 대기: 같은 패키지를 다시 내려주면 재설치 루프가 된다
         return {"update_available": False, "reason": "PENDING_REBOOT", "assignment_id": previous["id"],
-                "attempt": previous["attempt"], "next_check_after_s": _next_check(rollout["policy"])}
+                "attempt": previous["attempt"], "_rollout_id": rollout["id"]}
     max_attempts = rollout["policy"].get("max_attempts", 2)
     if previous and previous["state"] in RETRYABLE_STATES and previous["attempt"] >= max_attempts:
-        return {"update_available": False, "reason": "RETRY_LIMIT_REACHED",
-                "next_check_after_s": _next_check(rollout["policy"])}
+        return {"update_available": False, "reason": "RETRY_LIMIT_REACHED", "_rollout_id": rollout["id"]}
+    return result
+
+
+def update_check(ota: OtaStore, body: UpdateCheckIn) -> dict:
+    ota.record_check(body.device_hash, body.device, body.fingerprint, body.model_dump(exclude={"device_hash"}))
+    ota.apply_boot_outcomes(body.device_hash, body.fingerprint, body.boot_id)
+    candidates = ota.candidate_rollouts(body.device, body.channel)
+    existing = {a["rollout_id"]: a for a in ota.assignments_for(body.device_hash)}
+    dev = DeviceState(device=body.device, fingerprint=body.fingerprint, build_timestamp=body.build_timestamp,
+                      security_patch=body.security_patch, channel=body.channel, device_hash=body.device_hash,
+                      carrier=body.carrier, region=body.region, sku=body.sku, tags=ota.device_tags(body.device_hash))
+    result = _offer_decision(ota, dev, candidates, existing)
+    if not isinstance(result, Match):
+        policy = candidates[0]["policy"] if candidates else {}
+        selected_id = result.pop("_rollout_id", None)
+        if selected_id is not None:
+            policy = next(r["policy"] for r in candidates if r["id"] == selected_id)
+        return {**result, "next_check_after_s": _next_check(policy)}
+    rollout = next(r for r in candidates if r["id"] == result.rollout.id)
     pkg = next(p for p in rollout["packages"] if p["id"] == result.package.id)
     assignment = ota.upsert_assignment(rollout["id"], body.device_hash, pkg["id"], body.fingerprint)
     target = ota.build_by_fingerprint(rollout["target_fingerprint"])
@@ -276,6 +297,47 @@ def update_check(ota: OtaStore, body: UpdateCheckIn) -> dict:
         "policy": {k: v for k, v in rollout["policy"].items() if k not in ("check_interval_s", "max_attempts")},
         "next_check_after_s": _next_check(rollout["policy"]),
     }
+
+
+def preview_rollout(ota: OtaStore, rid: int) -> dict:
+    """Read-only snapshot for one rollout. Drafts simulate their first stage."""
+    with ota.s.tx():
+        r = ota.rollout_with_packages(rid)
+        draft = r["state"] == "draft"
+        if draft:
+            r = {**r, "state": "active", "current_percent": r["stages"][0]["percent"]}
+        assignments = {a["device_hash"]: a for a in ota.s._all(
+            "SELECT * FROM assignment WHERE rollout_id = ?", (rid,))}
+        reasons, packages, sample = {}, {"full": 0, "incremental": 0}, []
+        total = eligible = 0
+        cursor = ""
+        while True:
+            rows = ota.s._all("SELECT * FROM fleet_device WHERE device = ? AND channel = ? "
+                              "AND device_hash > ? ORDER BY device_hash LIMIT 200", (r["device"], r["channel"], cursor))
+            if not rows:
+                break
+            cursor = rows[-1]["device_hash"]
+            for row in ota._inventory_out(rows):
+                total += 1
+                dev = DeviceState(**{k: row[k] for k in (
+                    "device", "fingerprint", "build_timestamp", "security_patch", "channel", "device_hash",
+                    "carrier", "region", "sku")}, tags=tuple(row["tags"]))
+                assignment = assignments.get(dev.device_hash)
+                result = _offer_decision(ota, dev, [r], {rid: assignment} if assignment else {})
+                if isinstance(result, Match):
+                    eligible += 1
+                    packages[result.package.type] += 1
+                    reason = "ELIGIBLE"
+                else:
+                    reason = result["reason"]
+                    if reason == "UP_TO_DATE" and r["state"] in ("paused", "completed") and dev.fingerprint != r["target_fingerprint"]:
+                        reason = "ROLLOUT_INACTIVE"
+                reasons[reason] = reasons.get(reason, 0) + 1
+                if len(sample) < 20:
+                    sample.append({"device_hash": dev.device_hash, "reason": reason})
+        return {"rollout_id": rid, "mode": "draft_first_stage" if draft else "current_stage",
+                "percent": r["current_percent"], "total": total, "eligible": eligible,
+                "reasons": reasons, "packages": packages, "sample": sample, "as_of": datetime.now().astimezone().isoformat()}
 
 
 # --------------------------------------------------------------------------- #
@@ -343,6 +405,31 @@ def build_router() -> APIRouter:
         accepted, duplicates = store.record_events(body.device_hash, events)
         return {"accepted": accepted, "duplicates": duplicates}
 
+    # ------------------------------------------------------------------ fleet
+    @router.get("/admin/v1/devices")
+    def list_devices(q: str = Query(default="", max_length=256), device: str | None = None,
+                     channel: Literal["testing", "beta", "stable"] | None = None,
+                     tag: str | None = Query(default=None, max_length=32),
+                     seen_within_hours: int | None = Query(default=None, ge=1, le=24 * 365),
+                     limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0),
+                     _: Principal = Depends(ANY), store: OtaStore = Depends(ota)):
+        return store.list_devices(q=q, device=device, channel=channel, tag=tag,
+                                  seen_within_hours=seen_within_hours, limit=limit, offset=offset)
+
+    @router.get("/admin/v1/devices/summary")
+    def fleet_summary(_: Principal = Depends(ANY), store: OtaStore = Depends(ota)):
+        return store.fleet_summary()
+
+    @router.get("/admin/v1/devices/{device_hash}")
+    def get_device(device_hash: Annotated[str, Field(pattern=SHA256_HEX)],
+                   _: Principal = Depends(ANY), store: OtaStore = Depends(ota)):
+        return store.get_device(device_hash)
+
+    @router.put("/admin/v1/devices/{device_hash}/tags")
+    def set_tags(device_hash: Annotated[str, Field(pattern=SHA256_HEX)], body: DeviceTagsIn,
+                 who: Principal = Depends(OPERATOR), store: OtaStore = Depends(ota)):
+        return store.set_device_tags(device_hash, body.tags, who.actor)
+
     # ------------------------------------------------------------------ packages
     @router.post("/admin/v1/packages/inspect")
     def inspect_package(body: InspectIn, request: Request, _: Principal = Depends(PIPELINE)):
@@ -402,6 +489,14 @@ def build_router() -> APIRouter:
         return {"rollout_id": rid, "assignments": store.assignment_counts(rid), "window": asdict(window),
                 "errors": [{"code": code, "name": ERROR_NAMES.get(code, f"ErrorCode{code}"), "devices": n}
                            for code, n in sorted(window.failed_by_code.items(), key=lambda kv: -kv[1])]}
+
+    @router.get("/admin/v1/rollouts/{rid}/preview")
+    def rollout_preview(rid: int, _: Principal = Depends(ANY), store: OtaStore = Depends(ota)):
+        return preview_rollout(store, rid)
+
+    @router.get("/admin/v1/rollouts/{rid}/promotion-status")
+    def promotion_status(rid: int, _: Principal = Depends(ANY), store: OtaStore = Depends(ota)):
+        return store.promotion_status(rid)
 
     @router.get("/admin/v1/rollouts/{rid}/timeseries")
     def rollout_timeseries(rid: int, hours: int = 48, _: Principal = Depends(ANY), store: OtaStore = Depends(ota)):
