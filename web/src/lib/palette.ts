@@ -88,7 +88,7 @@ export const HUES = Object.keys(HUE) as Hue[]
 // 페이지(첫 경로 세그먼트)별 대표 색
 export const PAGE_HUE: Record<string, Hue> = {
   about: 'violet', overview: 'sky', platforms: 'indigo', knowledge: 'teal', vintf: 'fuchsia',
-  packages: 'emerald', rollouts: 'orange', delta: 'cyan', audit: 'slate', settings: 'rose',
+  packages: 'emerald', devices: 'blue', rollouts: 'orange', delta: 'cyan', audit: 'slate', settings: 'rose',
 }
 
 export function usePageHue(): Hue {

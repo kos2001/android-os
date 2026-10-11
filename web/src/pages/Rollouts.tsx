@@ -11,11 +11,13 @@ import { navigate, useAsync } from '../lib/hooks'
 import { useT } from '../lib/i18n'
 import { HUE, hueOf, type Hue } from '../lib/palette'
 
-interface StageForm { percent: string; min_soak_hours: string }
+interface StageForm { percent: string; min_soak_hours: string; min_successful_boots: string; min_success_rate: string }
+
+const stageForm = (percent: string, soak: string): StageForm =>
+  ({ percent, min_soak_hours: soak, min_successful_boots: '0', min_success_rate: '' })
 
 const DEFAULT_STAGES: StageForm[] = [
-  { percent: '1', min_soak_hours: '24' }, { percent: '10', min_soak_hours: '24' },
-  { percent: '50', min_soak_hours: '24' }, { percent: '100', min_soak_hours: '0' },
+  stageForm('1', '24'), stageForm('10', '24'), stageForm('50', '24'), stageForm('100', '0'),
 ]
 
 // 단계마다 고유 색 (장식용). 지난 단계는 점 색, 현재 단계는 진하게, 남은 단계는 옅게.
@@ -69,6 +71,7 @@ function CreateRolloutDialog({ open, onClose }: { open: boolean; onClose: () => 
   const [unmetered, setUnmetered] = useState(true)
   const [battery, setBattery] = useState('30')
   const [maxAttempts, setMaxAttempts] = useState('2')
+  const [tags, setTags] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error>()
 
@@ -77,6 +80,7 @@ function CreateRolloutDialog({ open, onClose }: { open: boolean; onClose: () => 
     setError(undefined)
     setStages(DEFAULT_STAGES)
     setName('')
+    setTags('')
   }, [open])
   useEffect(() => { if (!target && targets[0]) setTarget(targets[0].post_build) }, [targets, target])
 
@@ -86,7 +90,9 @@ function CreateRolloutDialog({ open, onClose }: { open: boolean; onClose: () => 
     try {
       const r = await api.createRollout({
         name, target_fingerprint: target, channel,
-        stages: stages.map((s) => ({ percent: Number(s.percent), min_soak_hours: Number(s.min_soak_hours) })),
+        filters: { tags: tags.split(',').map((s) => s.trim()).filter(Boolean) },
+        stages: stages.map((s) => ({ percent: Number(s.percent), min_soak_hours: Number(s.min_soak_hours),
+          min_successful_boots: Number(s.min_successful_boots), min_success_rate: s.min_success_rate ? Number(s.min_success_rate) / 100 : null })),
         halt_rules: {
           min_sample: Number(minSample),
           max_error_rate: maxError ? Number(maxError) / 100 : null,
@@ -121,6 +127,12 @@ function CreateRolloutDialog({ open, onClose }: { open: boolean; onClose: () => 
             <Segmented value={channel} onChange={setChannel} items={[
               { value: 'testing', label: 'testing' }, { value: 'beta', label: 'beta' }, { value: 'stable', label: 'stable' }]} />
           </Field>
+          <Field className="col-span-2" label={t('대상 태그', 'Target tags')}
+            hint={t('쉼표로 구분. 태그 하나가 일치하면 대상에 포함됩니다. 비워 두면 모든 기기를 대상으로 합니다.',
+              'Comma separated. Any matching tag includes a device. Leave empty to target all devices.')}>
+            <Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="canary, lab-seoul" />
+            <a className="mt-1 block text-xs text-accent hover:underline" href="#/devices">{t('기기 인벤토리에서 태그 관리', 'Manage tags in device inventory')}</a>
+          </Field>
           <Field label={t('대상 빌드', 'Target build')} className="col-span-2" hint={targets.length ? undefined : t('Ready 패키지가 있어야 롤아웃을 만들 수 있습니다', 'A Ready package is required to create a rollout')}>
             <Select value={target} onChange={(e) => setTarget(e.target.value)} className="font-mono text-xs">
               {targets.map((p) => <option key={p.post_build} value={p.post_build}>{shortFingerprint(p.post_build)}</option>)}
@@ -133,11 +145,12 @@ function CreateRolloutDialog({ open, onClose }: { open: boolean; onClose: () => 
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-xs font-medium text-ink-2">{t('단계', 'Stages')}</h3>
             <Button size="sm" variant="ghost" icon={<Plus className="size-3.5" />} disabled={stages.length >= 8}
-              onClick={() => setStages((s) => [...s, { percent: '100', min_soak_hours: '0' }])}>{t('단계 추가', 'Add stage')}</Button>
+              onClick={() => setStages((s) => [...s, stageForm('100', '0')])}>{t('단계 추가', 'Add stage')}</Button>
           </div>
           <div className="space-y-2">
             {stages.map((s, i) => (
-              <div key={i} className={cx('flex items-center gap-2 rounded-md border-l-4 py-1 pl-2', HUE[stageHue(i)].border, HUE[stageHue(i)].soft)}>
+              <div key={i} className={cx('rounded-md border-l-4 p-2', HUE[stageHue(i)].border, HUE[stageHue(i)].soft)}>
+                <div className="flex flex-wrap items-center gap-2">
                 <span className={cx('flex w-14 items-center gap-1.5 text-xs font-medium', HUE[stageHue(i)].text)}>
                   <span aria-hidden className={cx('size-2 shrink-0 rounded-full', HUE[stageHue(i)].dot)} />
                   {t(`${i + 1}단계`, `Stage ${i + 1}`)}</span>
@@ -147,9 +160,22 @@ function CreateRolloutDialog({ open, onClose }: { open: boolean; onClose: () => 
                 <span className="text-xs text-muted">{t('시간', 'hours')}</span>
                 <Button size="sm" variant="ghost" aria-label={t('삭제', 'Delete')} disabled={stages.length <= 1}
                   onClick={() => setStages((st) => st.filter((_, j) => j !== i))} icon={<Trash2 className="size-3.5" />} />
+                </div>
+                {i < stages.length - 1 && <div className="mt-2 grid grid-cols-2 gap-3">
+                  <Field label={t('승격: 최소 부팅 성공 수', 'Promotion: minimum successful boots')}>
+                    <Input aria-label={t(`${i + 1}단계 최소 부팅 성공 수`, `Stage ${i + 1} minimum successful boots`)} value={s.min_successful_boots}
+                      onChange={(e) => setStage(i, 'min_successful_boots', e.target.value)} />
+                  </Field>
+                  <Field label={t('승격: 최소 성공률 %', 'Promotion: minimum success rate %')}>
+                    <Input aria-label={t(`${i + 1}단계 최소 성공률`, `Stage ${i + 1} minimum success rate`)} value={s.min_success_rate}
+                      onChange={(e) => setStage(i, 'min_success_rate', e.target.value)} placeholder={t('선택 사항', 'Optional')} />
+                  </Field>
+                </div>}
               </div>
             ))}
           </div>
+          <p className="mt-2 text-xs text-muted">{t('승격 기준은 전체 롤아웃의 부팅 성공 수 / 설치 시도 수입니다. 실패 후 재시도 이력과 진행 중인 시도도 반영합니다. 최소 성공 수 0, 성공률 공란이면 건강도 조건을 사용하지 않습니다.',
+            'Promotion uses successful boots / install attempts across the rollout, including failed retries and attempts in progress. Set minimum boots to 0 and leave the rate empty to omit health conditions.')}</p>
         </section>
 
         <div className="grid gap-4 md:grid-cols-2">

@@ -15,6 +15,7 @@ erDiagram
   ROLLOUT ||--o{ ASSIGNMENT : grants
   ASSIGNMENT }o--|| OTA_PACKAGE : uses
   ASSIGNMENT ||--o{ DEVICE_EVENT : reports
+  FLEET_DEVICE ||--o{ DEVICE_TAG : tagged
   PLATFORM ||--o{ READINESS_RUN : evaluated
   READINESS_RUN ||--o{ FINDING : yields
   FINDING ||--o| WORK_ITEM : tracked_by
@@ -40,8 +41,10 @@ erDiagram
 |---|---|---|
 | `build` | id, device_model_id, fingerprint(unique), incremental, timestamp_utc, spl(date), sdk_level, android_release | `ro.build.*` 값 |
 | `ota_package` | id, target_build_id, type(full/incremental), pre_builds text[], pre_device text[], post_timestamp, post_spl, post_sdk_level, wipe, downgrade, spl_downgrade, object_key, url, file_size, sha256, payload_offset, payload_size, payload_properties(jsonb: FILE_HASH…), streaming_property_files(text), status(pending/ready/rejected/retired), reject_reasons[] | 인덱스: GIN(pre_builds), (target_build_id, type) |
-| `rollout` | id, name, target_build_id, channel, filters(jsonb: carriers/regions/skus/source_fingerprints), state, current_percent, halt_rules(jsonb), halt_mode, policy(jsonb: require_unmetered, min_battery, install_window), created_by | OT-06, OT-07 |
-| `rollout_stage` | rollout_id, seq, percent, min_soak_hours, promoted_at, promoted_by | 승격 이력 |
+| `rollout` | id, name, target_build_id, channel, filters(jsonb: carriers/regions/skus/source_fingerprints/tags), state, current_percent, halt_rules(jsonb), halt_mode, policy(jsonb: require_unmetered, min_battery, install_window), created_by | OT-06, OT-07. tags는 OR, 다른 필터와 AND |
+| `rollout_stage` | rollout_id, seq, percent, min_soak_hours, min_successful_boots, min_success_rate?, promoted_at, promoted_by | 승격 이력·성공 조건. 기존 기본값 0·null |
+| `fleet_device` | device_hash(PK), device, fingerprint, channel, inventory(jsonb), first_seen_at, last_seen_at | 최신 체크인 1건. SQLite 시작 시 기존 이력에서 한 번 가져옴 |
+| `device_tag` | device_hash, tag | 복합 PK. 운영자가 관리하며 기기 요청의 태그는 사용하지 않음 |
 | `assignment` | id, rollout_id, device_hash, package_id, source_fingerprint, state(offered/downloading/installed_pending_reboot/boot_success/boot_fallback/failed), last_error_code, updated_at | unique(rollout_id, device_hash) |
 | `device_event` | id, assignment_id?, device_hash, type, update_status, error_code_raw(int64), error_code_base, error_flags[], fingerprint, occurred_at, received_at, payload(jsonb) | 월 파티션, 보존기간 정책(NF-07) |
 | `rollout_metrics_snapshot` | rollout_id, window_end, offered, installing, installed, boot_success, boot_fallback, errors_by_code(jsonb) | 자동 halt 입력 |

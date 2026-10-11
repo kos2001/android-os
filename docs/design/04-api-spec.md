@@ -139,3 +139,43 @@
 }
 ```
 임계값 수치는 **예시**이며 조직 결정 사항(Q9). 평가 구현: `upgrade_core.rollout.evaluate_halt`.
+
+### 2.2 기기 인벤토리와 배포 태그
+
+`GET /admin/v1/devices?q=&device=&channel=&tag=&seen_within_hours=&limit=50&offset=0` →
+`{items, total, limit, offset}`. limit은 1~200, offset은 0 이상이다. q는 기기 해시·모델·빌드의 대소문자 무시 부분 문자열이다.
+같은 기기가 여러 번 체크인해도 items에는 최신 상태 한 건만 있다. 최근 체크인 필터는 연결 상태 판정이 아니다.
+
+`GET /admin/v1/devices/summary` → `{total, seen_24h, models: [{device, devices}], tags: [{tag, devices}]}`.
+`GET /admin/v1/devices/{hash}` → 최신 모델·채널·빌드·보안 패치·지역·태그·최초/최근 체크인과 assignments.
+조회는 전체 관리자 API 역할에 허용한다.
+
+`PUT /admin/v1/devices/{hash}/tags {"tags": ["canary", "lab-seoul"]}` → 상세 응답.
+operator·release_manager·admin만 변경할 수 있다. 전체 태그 교체이며 빈 목록은 모두 제거한다. 중복은 제거하고 정렬한다.
+대소문자를 구분한다. 기기당 최대 20개, 태그는 `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,31}$`이며 변경은 감사 로그에 해시와 함께 남긴다.
+기기 update-check 요청의 tags는 사용하지 않는다.
+
+롤아웃 생성의 `filters.tags`는 하나 이상의 운영자 태그 일치를 요구하며, 기존 carrier·region·SKU·source 필터와 AND로 결합한다.
+비어 있으면 태그 제한이 없다. 태그를 제거해도 offered/downloading/installed_pending_reboot 할당은 계속 유지한다.
+필터에 맞는 롤아웃이 없으면 update-check reason은 `FILTER_MISMATCH`다.
+
+### 2.3 배포 대상 미리보기와 단계 승격
+
+`GET /admin/v1/rollouts/{id}/preview` →
+`{rollout_id, mode, percent, total, eligible, reasons, packages: {full, incremental}, sample, as_of}`.
+모델·채널이 같은 모든 기록된 기기의 최신 체크인을 대상으로 한다. 초안은 `mode=draft_first_stage`, 그 외는 `current_stage`다.
+실제 매칭·재시도·재부팅 대기·중단 정책을 적용하며 저장 데이터를 변경하지 않는다. sample은 해시 순 최대 20건이다.
+다른 롤아웃과의 우선순위와 아직 보고되지 않은 부팅 결과는 반영하지 않는다. reasons에는 `ELIGIBLE`,
+`FILTER_MISMATCH`, `NOT_IN_ROLLOUT`, `UP_TO_DATE`, `NO_COMPATIBLE_PACKAGE`, `PENDING_REBOOT`,
+`RETRY_LIMIT_REACHED`, `ROLLOUT_HALTED`, `ROLLOUT_INACTIVE`가 올 수 있다.
+
+stage 입력은 `{percent, min_soak_hours, min_successful_boots: 0, min_success_rate: null}`이다.
+성공 수는 0 이상, 성공률은 null 또는 0~1이다. 현재 stage의 조건은 **다음 단계로 승격할 때** 확인한다.
+성공률은 전체 롤아웃에서 부팅 성공 / 설치 시도이며 이전 재시도 실패와 진행 중인 설치도 포함한다.
+제안만 받은 할당과 일반 status만 있는 시도는 설치 시도에 포함하지 않는다. 설치 완료 후 재부팅 대기는 부팅 성공이 아니다.
+
+`GET /admin/v1/rollouts/{id}/promotion-status` →
+`{can_promote, reasons, soak_until, attempted, successful_boots, success_rate, min_successful_boots, min_success_rate, scope, rollout_id}`.
+scope는 `rollout_all_attempts`, 표본이 없으면 success_rate는 null이다. reasons에는 `NOT_ACTIVE`, `FINAL_STAGE`,
+`SOAK_PENDING`, `INSUFFICIENT_SUCCESSFUL_BOOTS`, `SUCCESS_RATE_BELOW_THRESHOLD`가 온다.
+promote는 같은 저장소 락 안에서 조건을 다시 확인하고 미충족 시 409를 반환한다. 성공 조건 기본값 0·null은 기존 동작을 유지한다.

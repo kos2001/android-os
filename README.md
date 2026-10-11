@@ -13,6 +13,7 @@ Android 기기/BSP의 메이저 OS 업그레이드(예: 16 → 17)를 지원하�
 |---|---|
 | [research/01 플랫폼 업그레이드 요구사항](docs/research/01-platform-upgrade-requirements.md) | 릴리스·API 레벨, GKI 커널 매트릭스/EOL, Treble·VNDK·FCM, CTS, BSP 체크리스트 |
 | [research/02 OTA 전달 메커니즘](docs/research/02-ota-delivery-mechanics.md) | A/B·VABC, payload/metadata, UpdateEngine API, 보안·롤백, 서버 설계 시사점 |
+| [research/03 유사 OTA 서비스](docs/research/03-similar-ota-services.md) | GitHub·공식 문서 비교, 기기 인벤토리·태그 배포·대상 미리보기·승격 조건 |
 | [design/01 요구사항](docs/design/01-requirements.md) | 기능(RD-*, OT-*)·비기능 요구사항 |
 | [design/02 아키텍처](docs/design/02-architecture.md) | 컴포넌트, 시퀀스, ADR |
 | [design/03 데이터 모델](docs/design/03-data-model.md) · [schema.sql](docs/design/schema.sql) | 엔터티, 불변식, DDL |
@@ -43,6 +44,8 @@ ANDROID_OS_NETWORK_TESTS=1 .venv/bin/python -m unittest tests.test_remote       
 
 React + TypeScript + Tailwind 운영 콘솔. 서비스 소개 페이지(`#/about` — 두 축·사용 흐름·판정 규칙·구성·원칙), 개요 대시보드, 플랫폼 준비도 판정·작업 항목, 릴리스 지식베이스(커널 지원 기간 차트),
 VINTF matrix 비교, OTA 패키지 등록·검사, 롤아웃 단계 운영(진행 추이·오류 코드·자동 중단 평가), Delta 후보, 감사 로그.
+기기 인벤토리(`#/devices`)에서 최신 빌드·보안 패치·체크인·설치 이력을 조회하고 운영자 태그를 관리한다.
+롤아웃 생성 시 태그 필터와 단계별 최소 부팅 성공 수·성공률을 지정할 수 있으며, 상세에서 제공 대상 미리보기와 승격 차단 사유를 확인한다.
 명령 팔레트(⌘K), 라이트/다크 테마, 모바일 메뉴, 모든 차트의 표 보기, **한국어·영어 UI**(상단 바 `EN/한` 버튼 또는 설정 — 첫 방문은 브라우저 언어)를 지원한다.
 readiness finding 은 `title`/`detail`(한국어)과 `title_en`/`detail_en`(영어)을 함께 저장·응답한다(영어 도입 전 판정은 한국어만).
 

@@ -71,7 +71,8 @@ export default function AboutPage() {
       points: [
         t('수 GB 패키지를 HTTP Range 로 수백 KB 만 읽어 검증', 'Validates multi-GB packages by reading only a few hundred KB over HTTP Range'),
         t('incremental 우선·full 폴백, 다운그레이드·SPL 하락 차단', 'Prefers incremental, falls back to full, blocks downgrades and SPL rollbacks'),
-        t('단계별 soak 시간, 오류율·부팅 폴백율 기반 자동 중단', 'Per-stage soak time and auto-halt on error or boot-fallback rates'),
+        t('단계별 유지 시간·승격 성공 조건, 오류율·부팅 폴백율 기반 자동 중단', 'Per-stage soak time and promotion success gates, with auto-halt on error or boot-fallback rates'),
+        t('기기 인벤토리·운영자 태그별 배포, 대상 미리보기', 'Device inventory, operator-managed tag targeting and deployment previews'),
       ],
     },
   ]
