@@ -1,4 +1,5 @@
 # android-os — Android OS 업그레이드 backend (사전 작업)
+<p><strong lang="ko">한국어</strong> · <a href="README.en.md" lang="en">English</a></p>
 
 Android 기기/BSP의 메이저 OS 업그레이드(예: 16 → 17)를 지원하는 backend의 **조사·설계·코어 로직**.
 
@@ -6,6 +7,26 @@ Android 기기/BSP의 메이저 OS 업그레이드(예: 16 → 17)를 지원하�
 - **OTA Delivery** — 서명된 A/B OTA 패키지 등록·update-check 매칭·단계 배포·텔레메트리·자동 halt
 
 > 범위·가정·미결 질문은 [docs/design/00-scope-assumptions.md](docs/design/00-scope-assumptions.md) 를 먼저 볼 것.
+
+## 빠른 시작
+
+```sh
+python3 -m venv .venv && .venv/bin/pip install -r requirements-server.txt
+cd web && npm ci && npm run build && cd ..                                            # web/dist 생성
+ANDROID_OS_DEV_MODE=1 .venv/bin/uvicorn --factory backend.app:create_app --port 8020   # http://127.0.0.1:8020
+.venv/bin/python scripts/seed_demo.py                                                  # (개발 모드 전용) 데모 데이터
+```
+
+## 화면
+
+| | |
+|---|---|
+| ![개요 대시보드](docs/img/overview.png) | ![플랫폼 준비도 판정](docs/img/readiness.png) |
+| 개요 — 24시간 체크인·부팅 성공/폴백·설치 실패 집계, 플랫폼별 최신 판정, 롤아웃·패키지 상태 | 플랫폼 준비도 — `legacy-5.10-bsp` 를 Android 17 기준으로 판정한 blocker/warning 과 작업 항목, 커널 uprev 권장 |
+| ![롤아웃 상세](docs/img/rollout.png) | |
+| 롤아웃 상세 — 단계(5% → 25% → 100%)·soak 대기, 배포 대상 미리보기, 설치 시도·부팅 판정·실패율과 자동 중단 기준 | |
+
+데모 데이터는 `scripts/seed_demo.py` 로 적재한 시뮬레이션 기기(400대)와 공개 Pixel OTA 패키지다.
 
 ## 문서
 
@@ -115,3 +136,7 @@ print(info.ready, info.reject_reasons, info.payload_offset, info.apply_payload_h
 ```
 
 지식베이스(`upgrade_core/data/releases.json`)는 2026-09-14 기준이며 각 항목에 출처가 있다. 새 릴리스(예: 17-QPR1 정식, 26Q4)가 나오면 이 파일과 `tests/test_readiness.py` 를 함께 갱신한다.
+
+## 라이선스
+
+MIT — [LICENSE](LICENSE) 참고.
